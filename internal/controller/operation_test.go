@@ -109,7 +109,11 @@ func TestOperationControllerAddOperation(t *testing.T) {
 		ev <- val
 	}()
 
-	oc := NewOperationController(channel, nil)
+	oc, err := NewOperationController(channel, afero.NewMemMapFs())
+	if err != nil {
+		t.Fatalf("NewOperationController: %s", err.Error())
+	}
+
 	id, err := oc.AddOperation(nil, "", owner)
 	if err != nil {
 		t.Fatalf("oc.AddOperation: %s", err.Error())
@@ -130,7 +134,11 @@ func TestOperationControllerGetOperation(t *testing.T) {
 		ev <- val
 	}()
 
-	oc := NewOperationController(channel, nil)
+	oc, err := NewOperationController(channel, afero.NewMemMapFs())
+	if err != nil {
+		t.Fatalf("NewOperationController: %s", err.Error())
+	}
+
 	id, err := oc.AddOperation(nil, "", owner)
 	if err != nil {
 		t.Fatalf("oc.AddOperation: %s", err.Error())
@@ -154,7 +162,10 @@ func TestOperationControllerNewOperation(t *testing.T) {
 
 	channel := &Channel{}
 
-	oc := NewOperationController(channel, afs)
+	oc, err := NewOperationController(channel, afs)
+	if err != nil {
+		t.Fatalf("NewOperationController: %s", err.Error())
+	}
 
 	id, ch := channel.Subscribe()
 
@@ -187,7 +198,11 @@ func TestOperationControllerGeneric(t *testing.T) {
 
 	channel := &Channel{}
 
-	oc := NewOperationController(channel, afs)
+	oc, err := NewOperationController(channel, afs)
+	if err != nil {
+		t.Fatalf("NewOperationController: %s", err.Error())
+	}
+
 	closed := make(chan struct{})
 
 	id, ch := channel.Subscribe()

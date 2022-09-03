@@ -73,8 +73,6 @@ func (c *Channel) Announce(s sse.Event) {
 	c.mtx.Unlock()
 }
 
-var Subscribers = Channel{}
-
 // DecodeOrFail tries to decode val to ctrl and if it fails, it writes
 // and returns an error.
 func DecodeOrFail(rd io.Reader, ctrl model.Controller, val interface{}) error {
@@ -137,8 +135,12 @@ type OperationController struct {
 	channel       *Channel
 }
 
-func NewOperationController(ch *Channel, fs afero.Fs) *OperationController {
-	return &OperationController{fs: fs, operations: map[string]*operation{}, channel: ch}
+func NewOperationController(ch *Channel, fs afero.Fs) (*OperationController, error) {
+	if ch == nil || fs == nil {
+		return nil, fmt.Errorf("one or more of the parameters is nil")
+	}
+
+	return &OperationController{fs: fs, operations: map[string]*operation{}, channel: ch}, nil
 }
 
 func (oc *OperationController) AddOperation(op *model.Operation, dst, owner string) (string, error) {
@@ -217,7 +219,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 	o, _ := oc.GetOperationOrFail(nil, id)
 
 	go oc.channel.Announce(sse.Event{
-		Event: "event",
+		Event: "new/operation",
 		Data:  o.Operation(),
 	})
 
@@ -340,6 +342,16 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 	op.op.Start()
 	ctrl.Value(strct)
 
+	go func() {
+		err := op.op.Error()
+		sub := oc.channel.GetSubscriber(op.owner)
+
+		sub <- sse.Event{
+			Event: "operation/error",
+			Data:  err,
+		}
+	}()
+
 	return nil
 }
 
@@ -373,6 +385,17 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 
 	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
 	if err != nil {
+		return err
+	}
+
+	if op.owner != strct.ID {
+		err := fmt.Errorf("only the owner of the operation can modify it")
+
+		ctrl.Error(model.ControllerError{
+			ID:     "operation-perm-denied",
+			Reason: err.Error(),
+		})
+
 		return err
 	}
 

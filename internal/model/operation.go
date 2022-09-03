@@ -123,6 +123,7 @@ func NewOperation(src Collection, dst afero.Fs) (*Operation, error) {
 		dst: dst}, nil
 }
 
+// Status returns the operation's status
 func (o *Operation) Status() uint8 {
 	o.lock()
 	defer o.unlock()
@@ -130,6 +131,8 @@ func (o *Operation) Status() uint8 {
 	return o.status
 }
 
+// Destination returns the destination file system. Please note that
+// destinations should not be changed, instead create a new operation.
 func (o *Operation) Destination() afero.Fs {
 	return o.dst
 }
@@ -213,7 +216,7 @@ func (o *Operation) Sources() Collection {
 	return o.src
 }
 
-// SetSources sets
+// SetSources sets the sources for the operation.
 func (o *Operation) SetSources(c Collection) {
 	o.srcMtx.Lock()
 	o.src = c
