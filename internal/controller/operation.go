@@ -286,16 +286,15 @@ func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) {
 	ctrl.Value(strct)
 }
 
-type GenericData struct {
+type OperationGenericData struct {
 	ID string `json:"id"`
 }
-
-type GenericValue GenericData
+type OperationGenericValue OperationGenericData
 
 // Generic methods
 
 func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error {
-	strct := &GenericData{}
+	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return err
 	}
@@ -312,7 +311,7 @@ func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error 
 }
 
 func (oc *OperationController) Resume(rd io.Reader, ctrl model.Controller) error {
-	strct := &GenericData{}
+	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return err
 	}
@@ -329,7 +328,7 @@ func (oc *OperationController) Resume(rd io.Reader, ctrl model.Controller) error
 }
 
 func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error {
-	strct := &GenericData{}
+	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return err
 	}
@@ -356,7 +355,7 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 }
 
 func (oc *OperationController) Exit(rd io.Reader, ctrl model.Controller) error {
-	strct := &GenericData{}
+	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return err
 	}
@@ -378,7 +377,7 @@ func (oc *OperationController) Exit(rd io.Reader, ctrl model.Controller) error {
 }
 
 func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) error {
-	strct := &GenericData{}
+	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return err
 	}

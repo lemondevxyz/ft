@@ -231,7 +231,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
 
-	if err := oc.Start(encodeJSON(GenericData{res.ID}), dummy); err != nil {
+	if err := oc.Start(encodeJSON(OperationGenericData{res.ID}), dummy); err != nil {
 		t.Fatalf("oc.Start: %s", err.Error())
 	}
 
@@ -244,7 +244,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("Start(rd, oc) doesn't actually start the operation")
 	}
 
-	err = oc.Pause(encodeJSON(GenericData{res.ID}), dummy)
+	err = oc.Pause(encodeJSON(OperationGenericData{res.ID}), dummy)
 	if err != nil {
 		t.Fatalf("oc.Pause: %s", err.Error())
 	}
@@ -253,7 +253,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("oc.Status isn't model.Paused")
 	}
 
-	err = oc.Resume(encodeJSON(GenericData{res.ID}), dummy)
+	err = oc.Resume(encodeJSON(OperationGenericData{res.ID}), dummy)
 	if err != nil {
 		t.Fatalf("oc.Pause: %s", err.Error())
 	}
@@ -262,7 +262,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("oc.Status isn't model.Started")
 	}
 
-	err = oc.Exit(encodeJSON(GenericData{res.ID}), dummy)
+	err = oc.Exit(encodeJSON(OperationGenericData{res.ID}), dummy)
 	if err != nil {
 		t.Fatalf("oc.Exit: %s", err.Error())
 	}
