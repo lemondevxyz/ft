@@ -114,6 +114,17 @@ func (s *server) Start() error {
 			}
 		}
 
+		c.Header("Content-Type", "application/json")
+		c.Header("Accept", "application/json")
+
+		if c.GetHeader("Content-Type") != "application/json" {
+			c.AbortWithStatusJSON(401, model.ControllerError{
+				ID:     "encoding",
+				Reason: "all data must be encoded in json",
+			})
+			return
+		}
+
 		c.Set("id", id)
 		c.Set("req", &request{c})
 	})
