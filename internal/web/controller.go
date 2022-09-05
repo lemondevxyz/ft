@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-contrib/sse"
@@ -79,21 +80,31 @@ func (s *server) Start() error {
 		s.channel.Unsubscribe(id)
 	})
 
+	apikey := os.Getenv("API_KEY")
+
 	protected := router.Group("/api/v0/", func(c *gin.Context) {
 		id := strings.ReplaceAll(c.GetHeader("Authorization"), "Bearer ", "")
-		if len(id) > 0 {
+		if len(apikey) > 0 {
+			if id != apikey {
+				c.AbortWithStatusJSON(401, model.ControllerError{
+					ID:     "authorization",
+					Reason: "invalid id (api key)",
+				})
+				return
+			}
+		} else if len(id) > 0 {
 			sub := s.channel.GetSubscriber(id)
 			if sub == nil {
 				c.AbortWithStatusJSON(401, model.ControllerError{
 					ID:     "authorization",
 					Reason: "invalid id",
 				})
+				return
 			}
-
-			c.Set("id", id)
-			c.Set("sse", sub)
-			c.Set("req", &request{c})
 		}
+
+		c.Set("id", id)
+		c.Set("req", &request{c})
 	})
 
 	{
