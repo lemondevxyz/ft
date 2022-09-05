@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
@@ -57,6 +58,8 @@ func (s *server) Start() error {
 		c.Header("Connection", "keep-alive")
 		c.Header("Cache-Control", "no-cache")
 
+		c.Writer.Flush()
+
 		first := false
 
 		var id string
@@ -65,15 +68,21 @@ func (s *server) Start() error {
 		c.Stream(func(w io.Writer) bool {
 			if !first {
 				id, ch = s.channel.Subscribe()
+
 				sse.Encode(w, sse.Event{
 					Event: "id",
 					Data:  id,
 				})
+
+				first = true
 			}
 
-			event := <-ch
+			select {
+			case <-time.After(time.Second):
+			case event := <-ch:
+				sse.Encode(w, event)
+			}
 
-			sse.Encode(w, event)
 			return true
 		})
 
@@ -92,6 +101,8 @@ func (s *server) Start() error {
 				})
 				return
 			}
+
+			return
 		} else if len(id) > 0 {
 			sub := s.channel.GetSubscriber(id)
 			if sub == nil {
@@ -148,7 +159,6 @@ func (s *server) Stop() error {
 func NewWebInstance(addr string, fs afero.Fs) (model.Server, error) {
 	sr := &server{
 		addr:         addr,
-		r:            &http.Server{},
 		channel:      &controller.Channel{},
 		fs:           fs,
 		opController: &controller.OperationController{},

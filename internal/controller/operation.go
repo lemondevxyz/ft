@@ -37,12 +37,7 @@ func (c *Channel) init() {
 func (c *Channel) Subscribe() (string, chan sse.Event) {
 	c.init()
 	id := randstr.String(16)
-
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-	c.m[id] = make(chan sse.Event)
-
-	return id, c.m[id]
+	return id, c.SetSubscriber(id)
 }
 
 // GetSubscriber returns a subscriber with that id or nil
@@ -50,6 +45,18 @@ func (c *Channel) GetSubscriber(id string) chan sse.Event {
 	c.init()
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
+
+	return c.m[id]
+}
+
+// SetSubscriber creates a subscriber and assign that particular id to
+// it.
+func (c *Channel) SetSubscriber(id string) chan sse.Event {
+	c.init()
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	c.m[id] = make(chan sse.Event)
 
 	return c.m[id]
 }
