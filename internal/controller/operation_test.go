@@ -19,18 +19,26 @@ func initFS() (afero.Fs, error) {
 		return nil, err
 	}
 
-	fi, err := afs.OpenFile("src/ok.txt", os.O_CREATE|os.O_RDWR, 0755)
+	fi, err := afs.OpenFile("src/ok.txt", os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return nil, err
 	}
 	fi.WriteString("hello")
 	fi.Close()
 
-	fi, err = afs.OpenFile("src/content/ok.txt", os.O_CREATE|os.O_RDWR, 0755)
+	fi, err = afs.OpenFile("src/content/ok.txt", os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return nil, err
 	}
+
 	fi.WriteString("hello part 2")
+	fi.Close()
+
+	fi, err = afs.OpenFile("src/content/ok2.txt", os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		return nil, err
+	}
+	fi.WriteString("Hello part 3")
 	fi.Close()
 
 	err = afs.MkdirAll("dst", 0755)
@@ -54,7 +62,7 @@ func TestSubscribe(t *testing.T) {
 
 	id, recv := ch.Subscribe()
 	if recv == nil {
-		t.Fatalf("Subscribe ")
+		t.Fatal("Subscribe has nil channel")
 	}
 
 	if _, ok := ch.m[id]; !ok {
@@ -177,7 +185,7 @@ func TestOperationControllerNewOperation(t *testing.T) {
 
 	ctrl := &model.DummyController{}
 
-	_, err = oc.NewOperation(encodeJSON(NewOperationData{
+	_, err = oc.NewOperation(encodeJSON(OperationNewData{
 		WriterID: id,
 		Src:      "src",
 		Dst:      "dst",
@@ -209,6 +217,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 
 	open := true
 	started := false
+
 	go func() {
 		for open {
 			started = true
@@ -222,7 +231,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 	}
 
 	dummy := &model.DummyController{}
-	res, err := oc.NewOperation(encodeJSON(NewOperationData{
+	res, err := oc.NewOperation(encodeJSON(OperationNewData{
 		WriterID: id,
 		Src:      "src",
 		Dst:      "dst",
@@ -240,7 +249,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("GetOperationOrFail: %s", err.Error())
 	}
 
-	if op.op.Status() != model.Started {
+	if op.Status() != model.Started {
 		t.Fatalf("Start(rd, oc) doesn't actually start the operation")
 	}
 
@@ -249,8 +258,8 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("oc.Pause: %s", err.Error())
 	}
 
-	if op.op.Status() != model.Paused {
-		t.Fatalf("oc.Status isn't model.Paused")
+	if op.Status() != model.Paused {
+		t.Fatalf("oc.Status isn't model.Paused: %d", op.Status())
 	}
 
 	err = oc.Resume(encodeJSON(OperationGenericData{res.ID}), dummy)
@@ -258,8 +267,8 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("oc.Pause: %s", err.Error())
 	}
 
-	if op.op.Status() != model.Started {
-		t.Fatalf("oc.Status isn't model.Started")
+	if op.Status() != model.Started {
+		t.Fatalf("oc.Status isn't model.Started: %d", op.Status())
 	}
 
 	err = oc.Exit(encodeJSON(OperationGenericData{res.ID}), dummy)
@@ -267,13 +276,19 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("oc.Exit: %s", err.Error())
 	}
 
-	if op.op.Status() != model.Aborted {
+	if op.Status() != model.Aborted {
 		t.Fatalf("oc.Status isn't model.Aborted")
 	}
 
+	t.Log("unsubscribe")
 	channel.Unsubscribe(id)
+	t.Log("open")
 	open = false
-	ch <- sse.Event{}
+
+	t.Log("closing")
+	close(ch)
+	t.Log("done")
 	<-closed
+	t.Log("fetching closed")
 
 }

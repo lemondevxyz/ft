@@ -24,11 +24,15 @@ func NewOsFileInfo(o os.FileInfo) OsFileInfo {
 	return OsFileInfo{o}
 }
 
-func (o OsFileInfo) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
+func (o OsFileInfo) Map() map[string]interface{} {
+	return map[string]interface{}{
 		"name":    o.Name(),
 		"size":    o.Size(),
 		"mode":    o.Mode(),
 		"modTime": o.ModTime(),
-	})
+	}
+}
+
+func (o OsFileInfo) MarshalJSON() ([]byte, error) {
+	return json.Marshal(o.Map())
 }

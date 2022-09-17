@@ -3,6 +3,7 @@ package model
 import (
 	"os"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,6 +72,21 @@ func TestOperationSources(t *testing.T) {
 	}
 }
 
+type progressSetter struct {
+	sync.Mutex
+	m map[int]int64
+}
+
+func (p *progressSetter) Set(index int, size int64) {
+	p.Lock()
+	if p.m == nil {
+		p.m = map[int]int64{}
+	}
+
+	p.m[index] = size
+	p.Unlock()
+}
+
 func TestOperationDo(t *testing.T) {
 	fs, err := initFS()
 	if err != nil {
@@ -83,12 +99,23 @@ func TestOperationDo(t *testing.T) {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
 
+	ps := &progressSetter{}
+	op.SetProgress(ps)
 	op.Start()
 
 	for i := 0; i < len(op.Sources()); i++ {
 		err := op.Error()
 		if err.Error != nil {
-			t.Log(err.Error)
+			t.Fatal(err.Error)
+		}
+
+		if ps.m[i] != op.Sources()[i].File.Size() {
+			t.Fatalf("file size mismatch: want: %d, have: %d", op.Sources()[i].File.Size(), ps.m[i])
+		} else {
+			t.Logf(op.Sources()[i].Path)
+			t.Logf("have: %d", ps.m[i])
+			t.Logf("written: %d", op.Sources()[i].File.Size())
+			t.Log()
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,20 @@ import (
 	"github.com/spf13/afero"
 )
 
+// ProgressSetter is an interface that allows for progress setting for
+// files. Whenever a file gets written to in *Operation, ProgressSetter's
+// Set function is called.
+//
+// With conjuction of index and src, ProgressSetter can provide real
+// time progress of the file transfers.
+type ProgressSetter interface {
+	Set(index int, written int64)
+}
+
+type progressWriter func(p []byte) (n int, err error)
+
+func (pw progressWriter) Write(p []byte) (n int, err error) { return pw(p) }
+
 type readerFunc func(p []byte) (n int, err error)
 
 func (rf readerFunc) Read(p []byte) (n int, err error) { return rf(p) }
@@ -21,6 +36,13 @@ type FileInfo struct {
 	Fs   afero.Fs
 	File os.FileInfo
 	Path string
+}
+
+func (f FileInfo) MarshalJSON() ([]byte, error) {
+	o := OsFileInfo{f.File}.Map()
+	o["path"] = f.Path
+
+	return json.Marshal(o)
 }
 
 // OperationFile is a marshallable object that is used to communicate
@@ -63,15 +85,24 @@ type OperationError struct {
 // errors can be dynamically handled by an outsider package so that
 // Operation is extensible via other packages.
 type Operation struct {
+	// mtx field represents the mtx for the whole Operation
+	// mtx is locked whenever the status has been changed
+	// or during do at the start
 	mtx    sync.Mutex
 	status uint8
 	once   sync.Once
 	err    chan OperationError
 	errWg  sync.WaitGroup
-	ch     chan struct{}
-	srcMtx sync.Mutex
-	src    Collection
-	dst    afero.Fs
+	exit   chan struct{}
+	// src fields
+	// srcMtx is used whenever src or srcIndex is going to be modified
+	srcMtx   sync.Mutex
+	src      Collection
+	srcIndex int
+	// the destination
+	dst afero.Fs
+	// progress fields
+	opProgress ProgressSetter
 }
 
 var (
@@ -106,6 +137,15 @@ func (o *Operation) unlock() { o.mtx.Unlock() }
 
 type Collection []FileInfo
 
+func (c Collection) MarshalJSON() ([]byte, error) {
+	return json.Marshal(CollectionToOperationFile(c))
+}
+
+type OperationProgress struct {
+	m        sync.Mutex
+	progress map[int]int64
+}
+
 const (
 	Default uint8 = iota
 	Started
@@ -116,11 +156,21 @@ const (
 
 // NewOperation returns an operation object.
 func NewOperation(src Collection, dst afero.Fs) (*Operation, error) {
-	return &Operation{
-		err: make(chan OperationError),
-		ch:  make(chan struct{}),
-		src: src,
-		dst: dst}, nil
+	op := &Operation{
+		err:      make(chan OperationError),
+		exit:     make(chan struct{}),
+		src:      src,
+		dst:      dst,
+		srcIndex: -1}
+
+	return op, nil
+}
+
+// SetProgress sets the progress setter for the files.
+func (o *Operation) SetProgress(v ProgressSetter) {
+	o.mtx.Lock()
+	o.opProgress = v
+	o.mtx.Unlock()
 }
 
 // Status returns the operation's status
@@ -163,8 +213,12 @@ func (o *Operation) Exit() error {
 		return fmt.Errorf("already aborted. Start a new instance..")
 	}
 
+	if o.status == Default {
+		return fmt.Errorf("cannot exit out of an operation that didn't start")
+	}
+
 	if o.status != Default {
-		close(o.ch)
+		close(o.exit)
 	}
 	o.status = Aborted
 
@@ -182,6 +236,16 @@ func (o *Operation) Pause() error {
 	}
 
 	return fmt.Errorf("cannot pause a non-started operation")
+}
+
+// Size returns the src size of the operation
+func (o *Operation) Size() int64 {
+	var size int64 = 0
+	for _, v := range o.src {
+		size += v.File.Size()
+	}
+
+	return size
 }
 
 // Resume resumes the operation.
@@ -216,6 +280,13 @@ func (o *Operation) Sources() Collection {
 	return o.src
 }
 
+// Index returns the index of the current file
+func (o *Operation) Index() int {
+	o.srcMtx.Lock()
+	defer o.srcMtx.Unlock()
+	return o.srcIndex
+}
+
 // SetSources sets the sources for the operation.
 func (o *Operation) SetSources(c Collection) {
 	o.srcMtx.Lock()
@@ -223,15 +294,27 @@ func (o *Operation) SetSources(c Collection) {
 	o.srcMtx.Unlock()
 }
 
+// do is the main loop for operation, it handles all file transfers
+// starting from index. do also adapts to any new files in the collection.
 func (o *Operation) do() {
 	o.once.Do(func() {
 		for i := 0; i < len(o.src); i++ {
 			select {
-			case <-o.ch:
+			case <-o.exit:
+				o.lock()
+				if o.status != Aborted && o.status != Finished {
+					o.status = Aborted
+
+					close(o.err)
+					close(o.exit)
+				}
+				o.unlock()
+
 				return
 			default:
 				o.lock()
 				if o.status == Paused {
+					i--
 					o.unlock()
 					continue
 				}
@@ -239,14 +322,14 @@ func (o *Operation) do() {
 
 				o.srcMtx.Lock()
 				srcFile := o.src[i]
+				o.srcIndex = i
 				o.srcMtx.Unlock()
 				o.errWg.Wait()
 
 				o.errWg.Add(1)
-				errObj := OperationError{Src: srcFile, Dst: o.dst}
 
+				errObj := OperationError{Src: srcFile, Dst: o.dst}
 				errOut := func(err error) {
-					fmt.Println("here", err)
 					errObj.Error = err
 					o.err <- errObj
 					i--
@@ -278,16 +361,34 @@ func (o *Operation) do() {
 					continue
 				}
 
-				_, err = io.Copy(dstWriter, readerFunc(func(p []byte) (int, error) {
+				_, err = io.Copy(progressWriter(func(p []byte) (int, error) {
+					n, err := dstWriter.Write(p)
+
+					o.lock()
+					if o.opProgress != nil {
+						o.opProgress.Set(i, int64(n))
+					}
+					o.unlock()
+
+					return n, err
+				}), readerFunc(func(p []byte) (int, error) {
 					select {
-					case <-o.ch:
+					case <-o.exit:
 						return 0, ErrCancelled
 					default:
+						for {
+							o.lock()
+							if o.status != Paused {
+								o.unlock()
+								break
+							}
+							o.unlock()
+						}
 						return srcReader.Read(p)
 					}
 				}))
 				if err != nil {
-					errOut(fmt.Errorf("io.Copy: %s", err.Error()))
+					errOut(fmt.Errorf("io.Copy: %w", err))
 					continue
 				}
 
@@ -299,8 +400,28 @@ func (o *Operation) do() {
 			}
 		}
 
+		o.lock()
 		o.status = Finished
+		o.unlock()
 		close(o.err)
-		close(o.ch)
+		close(o.exit)
 	})
+}
+
+type PublicOperation struct {
+	*Operation
+	Destination string `json:"dst"`
+}
+
+func (po PublicOperation) Map() map[string]interface{} {
+	return map[string]interface{}{
+		"index":  po.Index(),
+		"src":    po.src,
+		"status": po.status,
+		"dst":    po.Destination,
+	}
+}
+
+func (po PublicOperation) MarshalJSON() ([]byte, error) {
+	return json.Marshal(po.Map())
 }

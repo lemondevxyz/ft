@@ -21,9 +21,7 @@ func main() {
 		addr = ":8080"
 	}
 
-	fmt.Printf("Starting service on %s\n", addr)
-
-	serv, err := web.NewWebInstance(addr, fs)
+	serv, err := web.NewWebInstance(addr, fs, true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Web instance err'd out: %s\n", err.Error())
 	}

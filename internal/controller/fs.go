@@ -46,6 +46,8 @@ func (f *FsController) RemoveAll(rd io.Reader, ctrl model.Controller) error {
 		return err
 	}
 
+	f.ch.Announce(EventFsRemove(r.Name))
+
 	ctrl.Value(r)
 	return nil
 }
@@ -69,6 +71,8 @@ func (f *FsController) MkdirAll(rd io.Reader, ctrl model.Controller) error {
 	}
 
 	ctrl.Value(r)
+	f.ch.Announce(EventFsMkdir(r.Name))
+
 	return nil
 }
 
@@ -93,6 +97,8 @@ func (f *FsController) Move(rd io.Reader, ctrl model.Controller) error {
 		})
 		return err
 	}
+
+	f.ch.Announce(EventFsMove(r.Src, r.Dst))
 
 	ctrl.Value(r)
 	return nil

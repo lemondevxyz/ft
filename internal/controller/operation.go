@@ -114,30 +114,36 @@ func StatOrFail(ctrl model.Controller, fs afero.Fs, path string) error {
 	return nil
 }
 
-type operation struct {
-	op    *model.Operation
-	dst   string
-	id    string
-	owner string `json:"-"`
-}
-
-func (o *operation) Operation() *Operation {
-	return &Operation{
-		ID:   o.id,
-		Srcs: model.CollectionToOperationFile(o.op.Sources()),
-		Dst:  o.dst,
-	}
-}
-
 type Operation struct {
-	ID   string                `json:"id"`
-	Srcs []model.OperationFile `json:"srcs"`
-	Dst  string                `json:"dst"`
+	*model.PublicOperation
+	ID string
+	//Owner string `json:"-"`
+	mtx sync.Mutex
+}
+
+func (o *Operation) lock()   { o.mtx.Lock() }
+func (o *Operation) unlock() { o.mtx.Unlock() }
+
+func (o *Operation) MarshalJSON() ([]byte, error) {
+	m := o.Map()
+
+	m["id"] = o.ID
+
+	return json.Marshal(m)
+}
+
+type ProgressBroadcaster struct {
+	id      string
+	channel *Channel
+}
+
+func (p *ProgressBroadcaster) Set(index int, size int64) {
+	p.channel.Announce(EventOperationProgress(p.id, index, size))
 }
 
 type OperationController struct {
 	fs            afero.Fs
-	operations    map[string]*operation
+	operations    map[string]*Operation
 	operationsMtx sync.Mutex
 	channel       *Channel
 }
@@ -147,7 +153,7 @@ func NewOperationController(ch *Channel, fs afero.Fs) (*OperationController, err
 		return nil, fmt.Errorf("one or more of the parameters is nil")
 	}
 
-	return &OperationController{fs: fs, operations: map[string]*operation{}, channel: ch}, nil
+	return &OperationController{fs: fs, operations: map[string]*Operation{}, channel: ch}, nil
 }
 
 func (oc *OperationController) AddOperation(op *model.Operation, dst, owner string) (string, error) {
@@ -159,26 +165,26 @@ func (oc *OperationController) AddOperation(op *model.Operation, dst, owner stri
 	id := randstr.String(16)
 
 	oc.operationsMtx.Lock()
-	oc.operations[id] = &operation{op, dst, owner, id}
+	oc.operations[id] = &Operation{&model.PublicOperation{Operation: op, Destination: dst}, owner, sync.Mutex{}}
 	oc.operationsMtx.Unlock()
 
 	return id, nil
 }
 
-type NewOperationData struct {
+type OperationNewData struct {
 	WriterID string `json:"writer_id"`
 	Src      string `json:"src"`
 	Dst      string `json:"dst"`
 }
 
-type NewOperationResult struct {
+type OperationNewResult struct {
 	ID string `json:"id"`
 }
 
 // NewOperations reads from the reader and writes the response
 // to the controller.
-func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller) (*NewOperationResult, error) {
-	strct := &NewOperationData{}
+func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller) (*OperationNewResult, error) {
+	strct := &OperationNewData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return nil, err
 	}
@@ -220,21 +226,22 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		return nil, err
 	}
 
-	res := NewOperationResult{id}
+	res := OperationNewResult{id}
 	ctrl.Value(res)
 
 	o, _ := oc.GetOperationOrFail(nil, id)
-
-	go oc.channel.Announce(sse.Event{
-		Event: "new/operation",
-		Data:  o.Operation(),
+	oper.SetProgress(&ProgressBroadcaster{
+		id:      id,
+		channel: oc.channel,
 	})
+
+	go oc.channel.Announce(EventOperationNew(*o))
 
 	return &res, nil
 }
 
 // GetOperation returns operation by its id or an error
-func (oc *OperationController) GetOperation(id string) (*operation, error) {
+func (oc *OperationController) GetOperation(id string) (*Operation, error) {
 	oc.operationsMtx.Lock()
 	val, ok := oc.operations[id]
 	oc.operationsMtx.Unlock()
@@ -248,7 +255,7 @@ func (oc *OperationController) GetOperation(id string) (*operation, error) {
 
 // GetOperationOrFail returns an operation, or if it doesn't exist it
 // writes nil and error. Errors are also written to ctrl.
-func (oc *OperationController) GetOperationOrFail(ctrl model.Controller, id string) (*operation, error) {
+func (oc *OperationController) GetOperationOrFail(ctrl model.Controller, id string) (*Operation, error) {
 	op, err := oc.GetOperation(id)
 	if err != nil {
 		ctrl.Error(model.ControllerError{
@@ -261,24 +268,24 @@ func (oc *OperationController) GetOperationOrFail(ctrl model.Controller, id stri
 	return op, nil
 }
 
-type AddData struct {
+type OperationSetSourcesData struct {
 	ID   string   `json:"id"`
 	Srcs []string `json:"srcs"`
 }
 
-type AddValue AddData
+type OperationSetSourcesValue OperationSetSourcesData
 
 // Add adds extra sources to the operation
-func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) {
-	strct := &AddData{}
+func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) error {
+	strct := &OperationSetSourcesData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return
+		return err
 	}
 
 	collect := model.Collection{}
 	for _, src := range strct.Srcs {
 		if err := StatOrFail(ctrl, oc.fs, src); err != nil {
-			return
+			return err
 		}
 
 		collect = append(collect, model.FsToCollection(afero.NewBasePathFs(oc.fs, src))...)
@@ -286,11 +293,13 @@ func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) {
 
 	val, err := oc.GetOperationOrFail(ctrl, strct.ID)
 	if err != nil {
-		return
+		return err
 	}
 
-	val.op.SetSources(collect)
+	val.SetSources(collect)
 	ctrl.Value(strct)
+
+	return nil
 }
 
 type OperationGenericData struct {
@@ -311,7 +320,8 @@ func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error 
 		return err
 	}
 
-	op.op.Pause()
+	op.Pause()
+	go oc.channel.Announce(EventOperationStatus(op.ID, op.Status()))
 	ctrl.Value(strct)
 
 	return nil
@@ -328,7 +338,8 @@ func (oc *OperationController) Resume(rd io.Reader, ctrl model.Controller) error
 		return err
 	}
 
-	op.op.Resume()
+	op.Resume()
+	go oc.channel.Announce(EventOperationStatus(op.ID, op.Status()))
 	ctrl.Value(strct)
 
 	return nil
@@ -345,16 +356,19 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 		return err
 	}
 
-	op.op.Start()
+	op.Start()
+	go oc.channel.Announce(EventOperationStatus(op.ID, op.Status()))
 	ctrl.Value(strct)
 
 	go func() {
-		err := op.op.Error()
-		sub := oc.channel.GetSubscriber(op.owner)
+		for {
+			err := op.Error()
+			oc.channel.Announce(EventOperationError(op.ID, err))
 
-		sub <- sse.Event{
-			Event: "operation/error",
-			Data:  err,
+			if op.Status() == model.Finished {
+				oc.channel.Announce(EventOperationDone(op.ID))
+				break
+			}
 		}
 	}()
 
@@ -372,7 +386,7 @@ func (oc *OperationController) Exit(rd io.Reader, ctrl model.Controller) error {
 		return err
 	}
 
-	op.op.Exit()
+	op.Exit()
 
 	oc.operationsMtx.Lock()
 	delete(oc.operations, strct.ID)
@@ -394,18 +408,7 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 		return err
 	}
 
-	if op.owner != strct.ID {
-		err := fmt.Errorf("only the owner of the operation can modify it")
-
-		ctrl.Error(model.ControllerError{
-			ID:     "operation-perm-denied",
-			Reason: err.Error(),
-		})
-
-		return err
-	}
-
-	op.op.Proceed()
+	op.Proceed()
 	ctrl.Value(strct)
 
 	return nil

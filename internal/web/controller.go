@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/lemondevxyz/ft/internal/controller"
@@ -37,6 +38,7 @@ func (r *request) Value(val interface{}) error {
 }
 
 type server struct {
+	dev          bool
 	addr         string
 	r            *http.Server
 	channel      *controller.Channel
@@ -52,6 +54,17 @@ func (s *server) Start() error {
 
 	router := gin.Default()
 
+	if s.dev {
+		corsHandler := cors.New(cors.Config{
+			AllowAllOrigins:  true,
+			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "HEAD"},
+			AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type"},
+			AllowCredentials: false,
+			MaxAge:           12 * time.Hour,
+		})
+
+		router.Use(corsHandler)
+	}
 	router.StaticFS("/web", afero.NewHttpFs(s.fs))
 	router.GET("/sse", func(c *gin.Context) {
 		c.Header("Content-Type", "text/event-stream")
@@ -131,12 +144,14 @@ func (s *server) Start() error {
 
 	{
 		op := protected.Group("/op")
+
 		op.POST("/new", func(c *gin.Context) { s.opController.NewOperation(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/pause", func(c *gin.Context) { s.opController.Pause(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/resume", func(c *gin.Context) { s.opController.Resume(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/exit", func(c *gin.Context) { s.opController.Exit(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/start", func(c *gin.Context) { s.opController.Start(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/proceed", func(c *gin.Context) { s.opController.Proceed(c.Request.Body, c.MustGet("req").(model.Controller)) })
+		op.POST("/set-sources", func(c *gin.Context) { s.opController.SetSources(c.Request.Body, c.MustGet("req").(model.Controller)) })
 	}
 	{
 		fs := protected.Group("/fs")
@@ -167,8 +182,9 @@ func (s *server) Stop() error {
 	return s.r.Close()
 }
 
-func NewWebInstance(addr string, fs afero.Fs) (model.Server, error) {
+func NewWebInstance(addr string, fs afero.Fs, dev bool) (model.Server, error) {
 	sr := &server{
+		dev:          dev,
 		addr:         addr,
 		channel:      &controller.Channel{},
 		fs:           fs,
