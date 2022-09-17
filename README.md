@@ -14,6 +14,6 @@ By default, `ft` runs at :8080, however this behavior can be changed through set
 ## api
 While there is no API documentation currently, it is very easy to use the API as it is pretty simple. Here's a few pointers:
 1. any client that connects to the server side events route `/sse` is a user
-2. all users must supply an `Authentication: Bearer $ID` cookie, with $ID being replace by the first event that is sent when the user connects to `/sse`
+2. all users must supply an `Authentication: Bearer $ID` cookie, with $ID being replaced by the first event that is sent when the user connects to `/sse`
 3. all routes have clearly defined data structures in the internal controller package, use `go doc` to see the internal data structures
 4. all data passed and returned are encoded in JSON
