@@ -39,10 +39,7 @@ type FileInfo struct {
 }
 
 func (f FileInfo) MarshalJSON() ([]byte, error) {
-	o := OsFileInfo{f.File}.Map()
-	o["path"] = f.Path
-
-	return json.Marshal(o)
+	return json.Marshal(NewOsFileInfo(f.File, f.Path))
 }
 
 // OperationFile is a marshallable object that is used to communicate

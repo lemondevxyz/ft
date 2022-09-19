@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"io"
+	"path"
 
 	"github.com/lemondevxyz/ft/internal/model"
 	"github.com/spf13/afero"
@@ -127,7 +128,7 @@ func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirVal
 
 	ret := []model.OsFileInfo{}
 	for _, v := range fis {
-		ret = append(ret, model.NewOsFileInfo(v))
+		ret = append(ret, model.NewOsFileInfo(v, path.Join(r.Name, v.Name())))
 	}
 
 	val := &ReadDirValue{Files: ret}
