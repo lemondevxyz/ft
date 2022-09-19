@@ -363,7 +363,7 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 	go func() {
 		for {
 			err := op.Error()
-			oc.channel.Announce(EventOperationError(op.ID, err))
+			oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
 
 			if op.Status() == model.Finished {
 				oc.channel.Announce(EventOperationDone(op.ID))
