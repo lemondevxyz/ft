@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/amoghe/distillog"
 	"github.com/spf13/afero"
 )
 
@@ -100,6 +101,8 @@ type Operation struct {
 	dst afero.Fs
 	// progress fields
 	opProgress ProgressSetter
+	// logger
+	logger distillog.Logger
 }
 
 var (
@@ -132,6 +135,40 @@ func FsToCollection(localfs afero.Fs) Collection {
 func (o *Operation) lock()   { o.mtx.Lock() }
 func (o *Operation) unlock() { o.mtx.Unlock() }
 
+func (o *Operation) srcLock() {
+	o.srcMtx.Lock()
+	o.logger.Infoln("srcLock()")
+}
+
+func (o *Operation) srcUnlock() {
+	o.srcMtx.Unlock()
+	o.logger.Infoln("srcUnlock()")
+}
+
+func (o *Operation) infof(fmt string, v ...interface{}) {
+	o.lock()
+	o.logger.Infof(fmt, v...)
+	o.unlock()
+}
+
+func (o *Operation) infoln(v ...interface{}) {
+	o.lock()
+	o.logger.Infoln(v...)
+	o.unlock()
+}
+
+func (o *Operation) errorf(fmt string, v ...interface{}) {
+	o.lock()
+	o.logger.Errorf(fmt, v...)
+	o.unlock()
+}
+
+func (o *Operation) errorln(v ...interface{}) {
+	o.lock()
+	o.logger.Errorln(v...)
+	o.unlock()
+}
+
 type Collection []FileInfo
 
 func (c Collection) MarshalJSON() ([]byte, error) {
@@ -158,16 +195,25 @@ func NewOperation(src Collection, dst afero.Fs) (*Operation, error) {
 		exit:     make(chan struct{}),
 		src:      src,
 		dst:      dst,
-		srcIndex: -1}
+		srcIndex: -1,
+		logger:   distillog.NewNullLogger("")}
 
 	return op, nil
 }
 
+// SetLogger sets the logger for the Operation
+func (o *Operation) SetLogger(l distillog.Logger) {
+	o.lock()
+	defer o.unlock()
+	o.logger = l
+}
+
 // SetProgress sets the progress setter for the files.
 func (o *Operation) SetProgress(v ProgressSetter) {
-	o.mtx.Lock()
+	o.lock()
+	defer o.unlock()
+	o.logger.Infof("SetProgress: %v", v)
 	o.opProgress = v
-	o.mtx.Unlock()
 }
 
 // Status returns the operation's status
@@ -188,10 +234,11 @@ func (o *Operation) Destination() afero.Fs {
 func (o *Operation) Start() error {
 	defer o.unlock()
 	o.lock()
-	if o.status == Started {
-		return fmt.Errorf("already started. either Exit(), Pause(), Resume()")
+	if o.status != Default {
+		return fmt.Errorf("cannot start an operation that has either already started, is resumed, has finished, or has been aborted")
 	}
 
+	o.logger.Infoln("Started the operation")
 	o.status = Started
 	go o.do()
 
@@ -206,18 +253,15 @@ func (o *Operation) Start() error {
 func (o *Operation) Exit() error {
 	defer o.unlock()
 	o.lock()
-	if o.status == Aborted {
-		return fmt.Errorf("already aborted. Start a new instance..")
+	if o.status != Started && o.status != Paused {
+		return fmt.Errorf("cannot exit out of an operation that has finished, hasn't started, or has been aborted")
 	}
 
-	if o.status == Default {
-		return fmt.Errorf("cannot exit out of an operation that didn't start")
-	}
-
-	if o.status != Default {
-		close(o.exit)
-	}
+	o.logger.Infoln("Aborted the operation")
 	o.status = Aborted
+	o.logger.Infoln("Closing the exit channel")
+	close(o.exit)
+	close(o.err)
 
 	return nil
 }
@@ -229,6 +273,7 @@ func (o *Operation) Pause() error {
 
 	if o.status == Started {
 		o.status = Paused
+		o.logger.Infoln("Paused the operation")
 		return nil
 	}
 
@@ -237,10 +282,17 @@ func (o *Operation) Pause() error {
 
 // Size returns the src size of the operation
 func (o *Operation) Size() int64 {
+	o.srcLock()
 	var size int64 = 0
 	for _, v := range o.src {
 		size += v.File.Size()
 	}
+	max := len(o.src)
+	o.srcUnlock()
+
+	o.lock()
+	o.logger.Infof("Src Length: %d, Size: %d\n", max, size)
+	o.unlock()
 
 	return size
 }
@@ -252,6 +304,7 @@ func (o *Operation) Resume() error {
 
 	if o.status == Paused {
 		o.status = Started
+		o.logger.Infoln("Resumed the operation")
 		return nil
 	}
 
@@ -261,45 +314,59 @@ func (o *Operation) Resume() error {
 // Proceed is used whenever an error is called. When an operation error
 // occurs, the operation gets stuck unless Proceed is called.
 func (o *Operation) Proceed() {
+	o.lock()
+	defer o.unlock()
+
+	o.logger.Infoln("Proceeded with the error")
 	o.errWg.Done()
 }
 
 // Error returns the error if there is any, or hangs if there isn't an
 // error.
 func (o *Operation) Error() OperationError {
-	return <-o.err
+	o.infoln("Error(): waiting for channel recv")
+	err := <-o.err
+	o.infoln("Error(): done channel recv")
+	return err
 }
 
 // Sources returns the list of files that are to be copied ot the destination.
 func (o *Operation) Sources() Collection {
-	o.srcMtx.Lock()
-	defer o.srcMtx.Unlock()
+	o.srcLock()
+	defer o.srcUnlock()
 	return o.src
 }
 
 // Index returns the index of the current file
 func (o *Operation) Index() int {
-	o.srcMtx.Lock()
-	defer o.srcMtx.Unlock()
+	o.srcLock()
+	defer o.srcUnlock()
+	o.infof("Index: %d\n", len(o.src))
 	return o.srcIndex
 }
 
 // SetSources sets the sources for the operation.
 func (o *Operation) SetSources(c Collection) {
-	o.srcMtx.Lock()
+	o.srcLock()
+	old := len(o.src)
 	o.src = c
-	o.srcMtx.Unlock()
+	o.infof("SetSources(old, new): %d, %d\n", old, len(o.src))
+	o.srcUnlock()
 }
 
 // do is the main loop for operation, it handles all file transfers
 // starting from index. do also adapts to any new files in the collection.
 func (o *Operation) do() {
+	o.infoln("do()")
+
 	o.once.Do(func() {
 		for i := 0; i < len(o.src); i++ {
 			select {
 			case <-o.exit:
+				o.infoln("do(): <-o.exit")
 				o.lock()
 				if o.status != Aborted && o.status != Finished {
+					o.logger.Infoln("Status != Aborted|Finished")
 					o.status = Aborted
 
 					close(o.err)
@@ -311,22 +378,28 @@ func (o *Operation) do() {
 			default:
 				o.lock()
 				if o.status == Paused {
+					o.logger.Infoln("do(): paused")
 					i--
 					o.unlock()
+					time.Sleep(time.Millisecond * 100)
 					continue
 				}
 				o.unlock()
 
-				o.srcMtx.Lock()
+				o.srcLock()
 				srcFile := o.src[i]
+				o.infof("do(): srcFile: %d, %s\n", i, srcFile.File.Name())
 				o.srcIndex = i
-				o.srcMtx.Unlock()
-				o.errWg.Wait()
+				o.srcUnlock()
 
+				o.infoln("do(): waiting")
+				o.errWg.Wait()
+				o.infoln("do(): done waiting")
 				o.errWg.Add(1)
 
 				errObj := OperationError{Src: srcFile, Dst: o.dst}
 				errOut := func(err error) {
+					o.errorf("do(): errOut: %s\n", err)
 					errObj.Error = err
 					o.err <- errObj
 					i--
@@ -392,15 +465,21 @@ func (o *Operation) do() {
 				dstWriter.Close()
 				srcReader.Close()
 
+				o.infof("do(): done transfer: %d, %d, %s\n", i, len(o.src), srcFile.File.Name())
 				o.errWg.Done()
+				o.infoln("do(): sending error")
 				o.err <- errObj
+				o.infoln("do(): done")
 			}
 		}
 
+		o.infoln("do(): loop done")
 		o.lock()
 		o.status = Finished
 		o.unlock()
+		o.infoln("do(): closing o.err")
 		close(o.err)
+		o.infoln("do(): closing o.exit")
 		close(o.exit)
 	})
 }

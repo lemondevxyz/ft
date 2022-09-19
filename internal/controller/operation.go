@@ -235,7 +235,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		channel: oc.channel,
 	})
 
-	go oc.channel.Announce(EventOperationNew(*o))
+	go oc.channel.Announce(EventOperationNew(o))
 
 	return &res, nil
 }

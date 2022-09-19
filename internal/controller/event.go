@@ -41,7 +41,7 @@ func EventOperationProgress(id string, index int, size int64) sse.Event {
 	}
 }
 
-func EventOperationNew(o Operation) sse.Event {
+func EventOperationNew(o *Operation) sse.Event {
 	return sse.Event{
 		Event: "operation-new",
 		Data:  o,
