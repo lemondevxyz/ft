@@ -6,7 +6,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/amoghe/distillog"
 	"github.com/gin-contrib/sse"
 	"github.com/lemondevxyz/ft/internal/model"
 	"github.com/spf13/afero"
@@ -257,7 +256,6 @@ func TestOperationControllerGeneric(t *testing.T) {
 		t.Fatalf("GetOperationOrFail: %s", err.Error())
 	}
 
-	op.SetLogger(distillog.NewStderrLogger("testing"))
 	t.Log(op.Sources())
 
 	if op.Status() != model.Started {

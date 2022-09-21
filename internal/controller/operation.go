@@ -202,7 +202,17 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		}
 
 		if fi.File.IsDir() {
-			collection = append(collection, model.FsToCollection(afero.NewBasePathFs(oc.fs, fi.Path))...)
+			_, err := model.FsToCollection(afero.NewBasePathFs(oc.fs, fi.Path))
+			if err != nil {
+				ctrl.Error(model.ControllerError{
+					ID:     "model/fs-to-collection",
+					Reason: err.Error(),
+				})
+
+				return nil, err
+			}
+
+			collection = append(collection)
 		} else {
 			collection = append(collection, *fi)
 		}
@@ -368,11 +378,11 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 	go func() {
 		for {
 			err := op.Error()
-			oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
-
-			if op.Status() == model.Finished {
+			if op.Status() == model.Aborted || op.Status() == model.Finished {
 				oc.channel.Announce(EventOperationDone(op.ID))
 				break
+			} else {
+				oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
 			}
 		}
 	}()

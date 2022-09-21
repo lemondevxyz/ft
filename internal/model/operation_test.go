@@ -50,7 +50,12 @@ func TestNewOperation(t *testing.T) {
 		t.Fatalf("initFS: %s", err.Error())
 	}
 
-	_, err = NewOperation(FsToCollection(fs), afero.NewMemMapFs())
+	collection, err := FsToCollection(fs)
+	if err != nil {
+		t.Fatalf("FsToCollection: %s", err.Error())
+	}
+
+	_, err = NewOperation(collection, afero.NewMemMapFs())
 	if err != nil {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
@@ -62,7 +67,12 @@ func TestOperationSources(t *testing.T) {
 		t.Fatalf("initFS: %s", err.Error())
 	}
 
-	op, err := NewOperation(FsToCollection(fs), afero.NewMemMapFs())
+	collection, err := FsToCollection(fs)
+	if err != nil {
+		t.Fatalf("FsToCollection: %s", err.Error())
+	}
+
+	op, err := NewOperation(collection, afero.NewMemMapFs())
 	if err != nil {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
@@ -94,7 +104,12 @@ func TestOperationDo(t *testing.T) {
 	}
 
 	dst := afero.NewMemMapFs()
-	op, err := NewOperation(FsToCollection(fs), dst)
+	collection, err := FsToCollection(fs)
+	if err != nil {
+		t.Fatalf("FsToCollection: %s", err.Error())
+	}
+
+	op, err := NewOperation(collection, dst)
 	if err != nil {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
@@ -143,7 +158,12 @@ func TestOperationAdd(t *testing.T) {
 	}
 
 	dst := afero.NewMemMapFs()
-	op, err := NewOperation(FsToCollection(fs), dst)
+	collection, err := FsToCollection(fs)
+	if err != nil {
+		t.Fatalf("FsToCollection: %s", err.Error())
+	}
+
+	op, err := NewOperation(collection, dst)
 	if err != nil {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
@@ -159,7 +179,12 @@ func TestOperationAdd(t *testing.T) {
 
 		if !added {
 			srcs := op.Sources()
-			srcs = append(srcs, FsToCollection(addfs)...)
+			collection, err := FsToCollection(addfs)
+			if err != nil {
+				t.Fatalf("FsToCollection: %s", err.Error())
+			}
+
+			srcs = append(srcs, collection...)
 
 			op.SetSources(srcs)
 			added = true
@@ -179,7 +204,12 @@ func TestOperationPauseResume(t *testing.T) {
 	}
 
 	dst := afero.NewMemMapFs()
-	op, err := NewOperation(FsToCollection(fs), dst)
+	collection, err := FsToCollection(fs)
+	if err != nil {
+		t.Fatalf("FsToCollection: %s", err.Error())
+	}
+
+	op, err := NewOperation(collection, dst)
 	if err != nil {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}

@@ -1,8 +1,11 @@
 package controller
 
 import (
+	"os"
+	"strconv"
 	"testing"
 
+	"github.com/cespare/xxhash"
 	"github.com/lemondevxyz/ft/internal/model"
 	"github.com/spf13/afero"
 )
@@ -144,5 +147,55 @@ func TestFsMove(t *testing.T) {
 	_, err = fs.Stat("old")
 	if err == nil {
 		t.Fatalf("ft.Stat: <nil>")
+	}
+}
+
+func writeFile(fs afero.Fs, path, content string, t *testing.T) {
+	file, err := fs.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0755)
+	if err != nil {
+		file.Close()
+		t.Fatalf("fs.OpenFile: %s", err.Error())
+	}
+
+	file.WriteString(content)
+	file.Close()
+}
+
+func TestFsVerify(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	writeFile(fs, "src", "hello world", t)
+	writeFile(fs, "diff_diff_size", "hello", t)
+	writeFile(fs, "diff_same_size", "hello worlb", t)
+	writeFile(fs, "same", "hello world", t)
+
+	sum := xxhash.New()
+	sum.Write([]byte("hello world"))
+	hashie := strconv.FormatUint(sum.Sum64(), 16)
+	writeFile(fs, "same_saved_as_checksum.xxh64", hashie, t)
+
+	bad := []string{"404", "diff_diff_size", "diff_same_size"}
+	good := []string{"same"}
+
+	ctrl, err := NewFsController(&Channel{}, fs)
+	if err != nil {
+		t.Fatalf("NewFsController: %s", err.Error())
+	}
+
+	for _, v := range bad {
+		dc := &model.DummyController{}
+		err := ctrl.Verify(encodeJSON(MoveData{Src: "src", Dst: v}), dc)
+		if err == nil {
+			t.Fatalf("ctrl.Verify should return error")
+		} else {
+			t.Log(err)
+		}
+	}
+
+	for _, v := range good {
+		dc := &model.DummyController{}
+		err := ctrl.Verify(encodeJSON(MoveData{Src: "src", Dst: v}), dc)
+		if err != nil {
+			t.Fatalf("ctrl.Verify shouldn't return error: %s", err.Error())
+		}
 	}
 }

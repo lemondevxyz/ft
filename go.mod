@@ -4,6 +4,7 @@ go 1.17
 
 require (
 	github.com/amoghe/distillog v0.0.0-20180726233512-ae382b35b717 // indirect
+	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/gin-contrib/cors v1.4.0 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/gin-gonic/gin v1.8.1 // indirect

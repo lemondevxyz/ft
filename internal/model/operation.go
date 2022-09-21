@@ -207,32 +207,43 @@ var (
 
 // FsToCollection takes in an afero file system and turns it into a collection
 // of files. The collection is always recursive.
-func FsToCollection(localfs afero.Fs) Collection {
+func FsToCollection(localfs afero.Fs) (Collection, error) {
 	arr := Collection{}
-	afero.Walk(localfs, ".", func(path string, info fs.FileInfo, err error) error {
+	err := afero.Walk(localfs, ".", func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
 		if !info.IsDir() {
 			arr = append(arr, FileInfo{
-				localfs,
-				info,
-				path,
+				Fs:   localfs,
+				File: info,
+				Path: path,
 			})
 		}
 
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 
-	return arr
+	return arr, nil
 }
 
 // DirToCollection gets all files within a directory and adds them to a
 // collection.
-func DirToCollection(base string) Collection {
-	collect := FsToCollection(afero.NewBasePathFs(afero.NewOsFs(), base))
+func DirToCollection(base string) (Collection, error) {
+	collect, err := FsToCollection(afero.NewBasePathFs(afero.NewOsFs(), base))
+	if err != nil {
+		return nil, err
+	}
+
 	for i := range collect {
 		collect[i].Path = path.Join(base, collect[i].Path)
 	}
 
-	return collect
+	return collect, nil
 }
 
 func (o *Operation) lock()   { o.mtx.Lock() }
