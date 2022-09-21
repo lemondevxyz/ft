@@ -101,17 +101,22 @@ func DecodeOrFail(rd io.Reader, ctrl model.Controller, val interface{}) error {
 
 // StatOrFail tries to stat a file in fs by it's path and if it fails,
 // it writes and returns an error.
-func StatOrFail(ctrl model.Controller, fs afero.Fs, path string) error {
-	if _, err := fs.Stat(path); err != nil {
+func StatOrFail(ctrl model.Controller, fs afero.Fs, path string) (*model.FileInfo, error) {
+	fi, err := fs.Stat(path)
+	if err != nil {
 		err = fmt.Errorf("file '%s' doesn't exist: %w", path, err)
 		ctrl.Error(model.ControllerError{
 			ID:     "file-stat-error",
 			Reason: err.Error(),
 		})
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &model.FileInfo{
+		Fs:   fs,
+		Path: path,
+		File: fi,
+	}, nil
 }
 
 type Operation struct {
@@ -172,9 +177,9 @@ func (oc *OperationController) AddOperation(op *model.Operation, dst, owner stri
 }
 
 type OperationNewData struct {
-	WriterID string `json:"writer_id"`
-	Src      string `json:"src"`
-	Dst      string `json:"dst"`
+	WriterID string   `json:"writer_id"`
+	Src      []string `json:"src"`
+	Dst      string   `json:"dst"`
 }
 
 type OperationNewResult struct {
@@ -189,26 +194,25 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		return nil, err
 	}
 
-	if err := StatOrFail(ctrl, oc.fs, strct.Src); err != nil {
+	collection := model.Collection{}
+	for _, src := range strct.Src {
+		fi, err := StatOrFail(ctrl, oc.fs, src)
+		if err != nil {
+			return nil, err
+		}
+
+		if fi.File.IsDir() {
+			collection = append(collection, model.FsToCollection(afero.NewBasePathFs(oc.fs, fi.Path))...)
+		} else {
+			collection = append(collection, *fi)
+		}
+	}
+
+	if _, err := StatOrFail(ctrl, oc.fs, strct.Dst); err != nil {
 		return nil, err
 	}
 
-	if err := StatOrFail(ctrl, oc.fs, strct.Dst); err != nil {
-		return nil, err
-	}
-
-	if strct.Src == strct.Dst {
-		ctrl.Error(model.ControllerError{
-			ID:     "same-src-dst",
-			Reason: "source and destination are the same",
-		})
-		return nil, fmt.Errorf("source and destination are the same")
-	}
-
-	srcFs := afero.NewBasePathFs(oc.fs, strct.Src)
-	dstFs := afero.NewBasePathFs(oc.fs, strct.Dst)
-
-	oper, err := model.NewOperation(model.FsToCollection(srcFs), dstFs)
+	oper, err := model.NewOperation(collection, afero.NewBasePathFs(oc.fs, strct.Dst))
 	if err != nil {
 		ctrl.Error(model.ControllerError{
 			ID:     "model/operation-error",
@@ -284,11 +288,12 @@ func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) e
 
 	collect := model.Collection{}
 	for _, src := range strct.Srcs {
-		if err := StatOrFail(ctrl, oc.fs, src); err != nil {
+		fi, err := StatOrFail(ctrl, oc.fs, src)
+		if err != nil {
 			return err
 		}
 
-		collect = append(collect, model.FsToCollection(afero.NewBasePathFs(oc.fs, src))...)
+		collect = append(collect, *fi)
 	}
 
 	val, err := oc.GetOperationOrFail(ctrl, strct.ID)
@@ -412,4 +417,25 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 	ctrl.Value(strct)
 
 	return nil
+}
+
+type OperationSizeValue struct {
+	Size int64 `json:"size"`
+}
+
+func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*OperationSizeValue, error) {
+	strct := &OperationGenericData{}
+	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
+		return nil, err
+	}
+
+	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	val := &OperationSizeValue{op.Size()}
+
+	ctrl.Value(val)
+	return val, nil
 }

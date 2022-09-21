@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/amoghe/distillog"
 	"github.com/gin-contrib/sse"
 	"github.com/lemondevxyz/ft/internal/model"
 	"github.com/spf13/afero"
@@ -39,6 +40,13 @@ func initFS() (afero.Fs, error) {
 		return nil, err
 	}
 	fi.WriteString("Hello part 3")
+	fi.Close()
+
+	fi, err = afs.OpenFile("new.txt", os.O_CREATE|os.O_WRONLY, 0755)
+	if err != nil {
+		return nil, err
+	}
+	fi.WriteString("extra file")
 	fi.Close()
 
 	err = afs.MkdirAll("dst", 0755)
@@ -187,7 +195,7 @@ func TestOperationControllerNewOperation(t *testing.T) {
 
 	_, err = oc.NewOperation(encodeJSON(OperationNewData{
 		WriterID: id,
-		Src:      "src",
+		Src:      []string{"src"},
 		Dst:      "dst",
 	}), ctrl)
 	if err != nil {
@@ -233,7 +241,7 @@ func TestOperationControllerGeneric(t *testing.T) {
 	dummy := &model.DummyController{}
 	res, err := oc.NewOperation(encodeJSON(OperationNewData{
 		WriterID: id,
-		Src:      "src",
+		Src:      []string{"src", "new.txt"},
 		Dst:      "dst",
 	}), dummy)
 	if err != nil {
@@ -248,6 +256,9 @@ func TestOperationControllerGeneric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOperationOrFail: %s", err.Error())
 	}
+
+	op.SetLogger(distillog.NewStderrLogger("testing"))
+	t.Log(op.Sources())
 
 	if op.Status() != model.Started {
 		t.Fatalf("Start(rd, oc) doesn't actually start the operation")

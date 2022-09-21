@@ -67,6 +67,11 @@ func EventOperationStatus(id string, status uint8) sse.Event {
 
 // Methods that are only sent for the owner
 func EventOperationError(id string, dst string, err model.OperationError) sse.Event {
+	errstr := ""
+	if err.Error != nil {
+		errstr = err.Error.Error()
+	}
+
 	return sse.Event{
 		Event: "operation-error",
 		Data: struct {
@@ -74,6 +79,6 @@ func EventOperationError(id string, dst string, err model.OperationError) sse.Ev
 			Src   string `json:"src"`
 			Dst   string `json:"dst"`
 			Error string `json:"error"`
-		}{id, err.Src.File.Name(), dst, err.Error.Error()},
+		}{id, err.Src.File.Name(), dst, errstr},
 	}
 }
