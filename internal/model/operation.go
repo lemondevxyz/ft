@@ -126,13 +126,14 @@ type readerFunc func(p []byte) (n int, err error)
 func (rf readerFunc) Read(p []byte) (n int, err error) { return rf(p) }
 
 type FileInfo struct {
-	Fs   afero.Fs
-	File os.FileInfo
-	Path string
+	Fs      afero.Fs
+	File    os.FileInfo
+	Path    string
+	AbsPath string
 }
 
 func (f FileInfo) MarshalJSON() ([]byte, error) {
-	return json.Marshal(NewOsFileInfo(f.File, f.Path))
+	return json.Marshal(NewOsFileInfo(f.File, f.Path, f.AbsPath))
 }
 
 // OperationFile is a marshallable object that is used to communicate
@@ -219,8 +220,8 @@ func FsToCollection(localfs afero.Fs) (Collection, error) {
 
 // DirToCollection gets all files within a directory and adds them to a
 // collection.
-func DirToCollection(base string) (Collection, error) {
-	collect, err := FsToCollection(afero.NewBasePathFs(afero.NewOsFs(), base))
+func DirToCollection(fs afero.Fs, base string) (Collection, error) {
+	collect, err := FsToCollection(afero.NewBasePathFs(fs, base))
 	if err != nil {
 		return nil, err
 	}
@@ -512,7 +513,6 @@ func (o *Operation) do() {
 				}
 
 				var size int64 = 0
-				lastWrote := time.Now()
 				_, err = io.Copy(progressWriter(func(p []byte) (int, error) {
 					n, err := dstWriter.Write(p)
 
@@ -520,11 +520,7 @@ func (o *Operation) do() {
 					if o.opProgress != nil {
 						// allow changing of size at writing speed levels
 						size += int64(n)
-						// but send writes after each second passes
-						if time.Now().Sub(lastWrote) > time.Second {
-							lastWrote = time.Now()
-							o.opProgress.Set(i, int64(size))
-						}
+						o.opProgress.Set(i, int64(size))
 					}
 					o.unlock()
 

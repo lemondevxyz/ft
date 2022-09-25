@@ -18,11 +18,12 @@ type Fs interface {
 // marshalled to json.
 type OsFileInfo struct {
 	os.FileInfo
-	Path string
+	Path         string
+	AbsolutePath string
 }
 
-func NewOsFileInfo(o os.FileInfo, path string) OsFileInfo {
-	return OsFileInfo{o, path}
+func NewOsFileInfo(o os.FileInfo, path, abs string) OsFileInfo {
+	return OsFileInfo{o, path, abs}
 }
 
 func (o OsFileInfo) Map() map[string]interface{} {
@@ -32,6 +33,7 @@ func (o OsFileInfo) Map() map[string]interface{} {
 		"mode":    o.Mode(),
 		"modTime": o.ModTime(),
 		"path":    o.Path,
+		"absPath": o.AbsolutePath,
 	}
 }
 

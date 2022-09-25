@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"os"
 	"testing"
 
@@ -176,6 +177,11 @@ func TestOperationControllerNewOperation(t *testing.T) {
 	}
 
 	channel := &Channel{}
+
+	afero.Walk(afs, "src", func(path string, info fs.FileInfo, err error) error {
+		t.Log(path)
+		return nil
+	})
 
 	oc, err := NewOperationController(channel, afs)
 	if err != nil {

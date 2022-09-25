@@ -60,7 +60,7 @@ func (s *server) Start() error {
 		corsHandler := cors.New(cors.Config{
 			AllowAllOrigins:  true,
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "HEAD"},
-			AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type"},
+			AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization", "Accept"},
 			AllowCredentials: false,
 			MaxAge:           12 * time.Hour,
 		})
@@ -93,15 +93,18 @@ func (s *server) Start() error {
 					Event: "id",
 					Data:  id,
 				})
-				sse.Encode(w, controller.EventOperationAll(s.opController.Operations()))
 
 				first = true
-			}
-
-			select {
-			case <-time.After(time.Second):
-			case event := <-ch:
-				sse.Encode(w, event)
+				go func() {
+					time.Sleep(time.Second)
+					ch <- controller.EventOperationAll(s.opController.Operations())
+				}()
+			} else {
+				select {
+				case <-time.After(time.Second):
+				case event := <-ch:
+					sse.Encode(w, event)
+				}
 			}
 
 			return true
@@ -111,6 +114,7 @@ func (s *server) Start() error {
 	})
 
 	protected := router.Group("/api/v0/", func(c *gin.Context) {
+		fmt.Println(c.Request.Method)
 		id := strings.ReplaceAll(c.GetHeader("Authorization"), "Bearer ", "")
 		if len(apikey) > 0 {
 			if id != apikey {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/gin-contrib/sse"
 	"github.com/lemondevxyz/ft/internal/model"
@@ -139,11 +140,21 @@ func (o *Operation) MarshalJSON() ([]byte, error) {
 }
 
 type ProgressBroadcaster struct {
+	mtx     sync.Mutex
 	id      string
 	channel *Channel
+	now     time.Time
 }
 
 func (p *ProgressBroadcaster) Set(index int, size int64) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	if time.Now().Sub(p.now) < time.Second {
+		return
+	}
+
+	p.now = time.Now()
 	p.channel.Announce(EventOperationProgress(p.id, index, size))
 }
 
@@ -210,7 +221,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		}
 
 		if fi.File.IsDir() {
-			_, err := model.DirToCollection(fi.Path)
+			_, err := model.DirToCollection(oc.fs, fi.Path)
 			if err != nil {
 				ctrl.Error(model.ControllerError{
 					ID:     "model/fs-to-collection",
@@ -229,11 +240,14 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 	}
 
 	if _, err := StatOrFail(ctrl, oc.fs, strct.Dst); err != nil {
+		fmt.Println("here 3", err)
 		return nil, err
 	}
 
 	oper, err := model.NewOperation(collection, afero.NewBasePathFs(oc.fs, strct.Dst))
 	if err != nil {
+		fmt.Println("here 4", err)
+
 		ctrl.Error(model.ControllerError{
 			ID:     "model/operation-error",
 			Reason: err.Error(),
@@ -243,6 +257,8 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 
 	id, err := oc.AddOperation(oper, strct.Dst, strct.WriterID)
 	if err != nil {
+		fmt.Println("here 5", err)
+
 		ctrl.Error(model.ControllerError{
 			ID:     "controller/operation-error",
 			Reason: err.Error(),
