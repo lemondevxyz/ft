@@ -138,25 +138,11 @@ func (f FileInfo) MarshalJSON() ([]byte, error) {
 // OperationFile is a marshallable object that is used to communicate
 // with Controller.
 type OperationFile struct {
-	Path    string
+	Name    string `json:"name"`
+	Path    string `json:"path"`
 	Size    int64
 	ModTime time.Time
 	IsDir   bool
-}
-
-// CollectionToOperationFile turns a Collection to a slice of
-// OperationFile.
-func CollectionToOperationFile(c Collection) (arr []OperationFile) {
-	for _, v := range c {
-		arr = append(arr, OperationFile{
-			Path:    v.Path,
-			Size:    v.File.Size(),
-			ModTime: v.File.ModTime(),
-			IsDir:   v.File.IsDir(),
-		})
-	}
-
-	return
 }
 
 // OperationError is an error that can occur in the middle of an
@@ -241,6 +227,7 @@ func DirToCollection(base string) (Collection, error) {
 
 	for i := range collect {
 		collect[i].Path = path.Join(base, collect[i].Path)
+		//collect[i].basePath = base
 	}
 
 	return collect, nil
@@ -260,10 +247,6 @@ func (o *Operation) srcUnlock() {
 }
 
 type Collection []FileInfo
-
-func (c Collection) MarshalJSON() ([]byte, error) {
-	return json.Marshal(CollectionToOperationFile(c))
-}
 
 type OperationProgress struct {
 	m        sync.Mutex
@@ -501,14 +484,16 @@ func (o *Operation) do() {
 					o.errWg.Add(1)
 				}
 
-				base := path.Base(srcFile.Path)
-				err := o.dst.MkdirAll(base, 0755)
-				if err != nil {
-					errOut(fmt.Errorf("%w: %s", ErrMkdir, err.Error()))
-					continue
+				dirPath := path.Clean(path.Dir(srcFile.Path))
+				if len(dirPath) > 0 {
+					err := o.dst.MkdirAll(dirPath, 0755)
+					if err != nil {
+						errOut(fmt.Errorf("%w: %s", ErrMkdir, err.Error()))
+						continue
+					}
 				}
 
-				_, err = o.dst.Stat(srcFile.Path)
+				_, err := o.dst.Stat(srcFile.Path)
 				if err == nil {
 					errOut(ErrDstAlreadyExists)
 					continue
@@ -526,12 +511,20 @@ func (o *Operation) do() {
 					continue
 				}
 
+				var size int64 = 0
+				lastWrote := time.Now()
 				_, err = io.Copy(progressWriter(func(p []byte) (int, error) {
 					n, err := dstWriter.Write(p)
 
 					o.lock()
 					if o.opProgress != nil {
-						o.opProgress.Set(i, int64(n))
+						// allow changing of size at writing speed levels
+						size += int64(n)
+						// but send writes after each second passes
+						if time.Now().Sub(lastWrote) > time.Second {
+							lastWrote = time.Now()
+							o.opProgress.Set(i, int64(size))
+						}
 					}
 					o.unlock()
 

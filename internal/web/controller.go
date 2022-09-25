@@ -54,6 +54,8 @@ func (s *server) Start() error {
 
 	router := gin.Default()
 
+	apikey := os.Getenv("API_KEY")
+
 	if s.dev {
 		corsHandler := cors.New(cors.Config{
 			AllowAllOrigins:  true,
@@ -80,12 +82,18 @@ func (s *server) Start() error {
 
 		c.Stream(func(w io.Writer) bool {
 			if !first {
-				id, ch = s.channel.Subscribe()
+				if len(apikey) > 0 {
+					id = apikey
+					ch = s.channel.SetSubscriber(id)
+				} else {
+					id, ch = s.channel.Subscribe()
+				}
 
 				sse.Encode(w, sse.Event{
 					Event: "id",
 					Data:  id,
 				})
+				sse.Encode(w, controller.EventOperationAll(s.opController.Operations()))
 
 				first = true
 			}
@@ -102,8 +110,6 @@ func (s *server) Start() error {
 		s.channel.Unsubscribe(id)
 	})
 
-	apikey := os.Getenv("API_KEY")
-
 	protected := router.Group("/api/v0/", func(c *gin.Context) {
 		id := strings.ReplaceAll(c.GetHeader("Authorization"), "Bearer ", "")
 		if len(apikey) > 0 {
@@ -114,9 +120,7 @@ func (s *server) Start() error {
 				})
 				return
 			}
-
-			return
-		} else if len(id) > 0 {
+		} else {
 			sub := s.channel.GetSubscriber(id)
 			if sub == nil {
 				c.AbortWithStatusJSON(401, model.ControllerError{

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"sync"
 
 	"github.com/gin-contrib/sse"
@@ -161,6 +162,13 @@ func NewOperationController(ch *Channel, fs afero.Fs) (*OperationController, err
 	return &OperationController{fs: fs, operations: map[string]*Operation{}, channel: ch}, nil
 }
 
+func (oc *OperationController) Operations() map[string]*Operation {
+	oc.operationsMtx.Lock()
+	defer oc.operationsMtx.Unlock()
+
+	return oc.operations
+}
+
 func (oc *OperationController) AddOperation(op *model.Operation, dst, owner string) (string, error) {
 	if oc.channel.GetSubscriber(owner) == nil {
 		err := fmt.Errorf("no writer by that id %s", owner)
@@ -170,7 +178,7 @@ func (oc *OperationController) AddOperation(op *model.Operation, dst, owner stri
 	id := randstr.String(16)
 
 	oc.operationsMtx.Lock()
-	oc.operations[id] = &Operation{&model.PublicOperation{Operation: op, Destination: dst}, owner, sync.Mutex{}}
+	oc.operations[id] = &Operation{&model.PublicOperation{Operation: op, Destination: dst}, id, sync.Mutex{}}
 	oc.operationsMtx.Unlock()
 
 	return id, nil
@@ -202,7 +210,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		}
 
 		if fi.File.IsDir() {
-			_, err := model.FsToCollection(afero.NewBasePathFs(oc.fs, fi.Path))
+			_, err := model.DirToCollection(fi.Path)
 			if err != nil {
 				ctrl.Error(model.ControllerError{
 					ID:     "model/fs-to-collection",
@@ -214,6 +222,8 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 
 			collection = append(collection)
 		} else {
+			fi.Fs = afero.NewBasePathFs(oc.fs, path.Dir(fi.Path))
+			fi.Path = path.Base(fi.Path)
 			collection = append(collection, *fi)
 		}
 	}

@@ -48,6 +48,13 @@ func EventOperationNew(o *Operation) sse.Event {
 	}
 }
 
+func EventOperationAll(o map[string]*Operation) sse.Event {
+	return sse.Event{
+		Event: "operation-all",
+		Data:  o,
+	}
+}
+
 func EventOperationDone(id string) sse.Event {
 	return sse.Event{
 		Event: "operation-done",
@@ -59,8 +66,8 @@ func EventOperationStatus(id string, status uint8) sse.Event {
 	return sse.Event{
 		Event: "operation-status",
 		Data: struct {
-			ID     string
-			Status uint8
+			ID     string `json:"id"`
+			Status uint8  `json:"status"`
 		}{id, status},
 	}
 }
