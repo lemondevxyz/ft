@@ -135,6 +135,7 @@ func (o *Operation) MarshalJSON() ([]byte, error) {
 	m := o.Map()
 
 	m["id"] = o.ID
+	m["size"] = o.Size()
 
 	return json.Marshal(m)
 }
@@ -240,13 +241,11 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 	}
 
 	if _, err := StatOrFail(ctrl, oc.fs, strct.Dst); err != nil {
-		fmt.Println("here 3", err)
 		return nil, err
 	}
 
 	oper, err := model.NewOperation(collection, afero.NewBasePathFs(oc.fs, strct.Dst))
 	if err != nil {
-		fmt.Println("here 4", err)
 
 		ctrl.Error(model.ControllerError{
 			ID:     "model/operation-error",
@@ -257,7 +256,6 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 
 	id, err := oc.AddOperation(oper, strct.Dst, strct.WriterID)
 	if err != nil {
-		fmt.Println("here 5", err)
 
 		ctrl.Error(model.ControllerError{
 			ID:     "controller/operation-error",
@@ -340,6 +338,8 @@ func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) e
 	val.SetSources(collect)
 	ctrl.Value(strct)
 
+	go oc.channel.Announce(EventOperationUpdate(val))
+
 	return nil
 }
 
@@ -348,7 +348,74 @@ type OperationGenericData struct {
 }
 type OperationGenericValue OperationGenericData
 
+type OperationStatusData struct {
+	ID     string `json:"id"`
+	Status uint8  `json:"status"`
+}
+type OperationStatusValue OperationGenericValue
+
 // Generic methods
+
+func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error {
+	strct := &OperationStatusData{}
+	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
+		return err
+	}
+
+	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
+	if err != nil {
+		return err
+	}
+
+	sendErr := func(err error) {
+		ctrl.Error(model.ControllerError{
+			ID:     "model/operation-error",
+			Reason: err.Error(),
+		})
+	}
+
+	switch strct.Status {
+	case model.Paused:
+		err := op.Pause()
+		if err != nil {
+			sendErr(err)
+			return err
+		}
+	case model.Aborted:
+		err := op.Exit()
+		if err != nil {
+			sendErr(err)
+			return err
+		}
+	case model.Started:
+		var err error
+		if op.Status() == model.Default {
+			err = op.Start()
+		} else if op.Status() == model.Paused {
+			err = op.Resume()
+		}
+		if err != nil {
+			sendErr(err)
+			return err
+		}
+	default:
+		err := fmt.Errorf("val %d has no effect", strct.Status)
+		ctrl.Error(model.ControllerError{
+			ID:     "controller/operation-bad-status",
+			Reason: err.Error(),
+		})
+
+		return err
+	}
+
+	go oc.channel.Announce(EventOperationUpdate(op))
+
+	ctrl.Value(OperationStatusValue{
+		ID: strct.ID,
+	})
+
+	return nil
+}
 
 func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationGenericData{}
@@ -362,7 +429,7 @@ func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error 
 	}
 
 	op.Pause()
-	go oc.channel.Announce(EventOperationStatus(op.ID, op.Status()))
+	go oc.channel.Announce(EventOperationUpdate(op))
 	ctrl.Value(strct)
 
 	return nil
@@ -380,7 +447,7 @@ func (oc *OperationController) Resume(rd io.Reader, ctrl model.Controller) error
 	}
 
 	op.Resume()
-	go oc.channel.Announce(EventOperationStatus(op.ID, op.Status()))
+	go oc.channel.Announce(EventOperationUpdate(op))
 	ctrl.Value(strct)
 
 	return nil
@@ -398,7 +465,7 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 	}
 
 	op.Start()
-	go oc.channel.Announce(EventOperationStatus(op.ID, op.Status()))
+	go oc.channel.Announce(EventOperationUpdate(op))
 	ctrl.Value(strct)
 
 	go func() {
@@ -449,29 +516,32 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 		return err
 	}
 
+	go oc.channel.Announce(EventOperationUpdate(op))
 	op.Proceed()
 	ctrl.Value(strct)
 
 	return nil
 }
 
-type OperationSizeValue struct {
-	Size int64 `json:"size"`
-}
-
-func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*OperationSizeValue, error) {
-	strct := &OperationGenericData{}
-	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return nil, err
+/*
+	type OperationSizeValue struct {
+		Size int64 `json:"size"`
 	}
 
-	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
-	if err != nil {
-		return nil, err
+	func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*OperationSizeValue, error) {
+		strct := &OperationGenericData{}
+		if err := DecodeOrFail(rd, ctrl, strct); err != nil {
+			return nil, err
+		}
+
+		op, err := oc.GetOperationOrFail(ctrl, strct.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		val := &OperationSizeValue{op.Size()}
+
+		ctrl.Value(val)
+		return val, nil
 	}
-
-	val := &OperationSizeValue{op.Size()}
-
-	ctrl.Value(val)
-	return val, nil
-}
+*/

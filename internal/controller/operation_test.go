@@ -211,6 +211,103 @@ func TestOperationControllerNewOperation(t *testing.T) {
 	channel.Unsubscribe(id)
 }
 
+func TestOperationControllerStatus(t *testing.T) {
+	afs, err := initFS()
+	if err != nil {
+		t.Fatalf("initFS: %s", err.Error())
+	}
+
+	channel := &Channel{}
+
+	oc, err := NewOperationController(channel, afs)
+	if err != nil {
+		t.Fatalf("NewOperationController: %s", err.Error())
+	}
+
+	closed := make(chan struct{})
+
+	id, ch := channel.Subscribe()
+
+	open := true
+	started := false
+
+	go func() {
+		for open {
+			started = true
+			<-ch
+		}
+
+		close(closed)
+	}()
+
+	for !started {
+	}
+
+	dummy := &model.DummyController{}
+	res, err := oc.NewOperation(encodeJSON(OperationNewData{
+		WriterID: id,
+		Src:      []string{"src", "new.txt"},
+		Dst:      "dst",
+	}), dummy)
+	if err != nil {
+		t.Fatalf("NewOperation: %s", err.Error())
+	}
+
+	if err := oc.Status(encodeJSON(OperationStatusData{res.ID, model.Started}), dummy); err != nil {
+		t.Fatalf("oc.Start: %s", err.Error())
+	}
+
+	op, err := oc.GetOperationOrFail(dummy, res.ID)
+	if err != nil {
+		t.Fatalf("GetOperationOrFail: %s", err.Error())
+	}
+
+	t.Log(op.Sources())
+
+	if op.Status() != model.Started {
+		t.Fatalf("Start(rd, oc) doesn't actually start the operation")
+	}
+
+	err = oc.Status(encodeJSON((OperationStatusData{res.ID, model.Paused})), dummy)
+	if err != nil {
+		t.Fatalf("oc.Pause: %s", err.Error())
+	}
+
+	if op.Status() != model.Paused {
+		t.Fatalf("oc.Status isn't model.Paused: %d", op.Status())
+	}
+
+	err = oc.Status(encodeJSON(OperationStatusData{res.ID, model.Started}), dummy)
+	if err != nil {
+		t.Fatalf("oc.Pause: %s", err.Error())
+	}
+
+	if op.Status() != model.Started {
+		t.Fatalf("oc.Status isn't model.Started: %d", op.Status())
+	}
+
+	err = oc.Status(encodeJSON(OperationStatusData{res.ID, model.Aborted}), dummy)
+	if err != nil {
+		t.Fatalf("oc.Exit: %s", err.Error())
+	}
+
+	if op.Status() != model.Aborted {
+		t.Fatalf("oc.Status isn't model.Aborted")
+	}
+
+	t.Log("unsubscribe")
+	channel.Unsubscribe(id)
+	t.Log("open")
+	open = false
+
+	t.Log("closing")
+	close(ch)
+	t.Log("done")
+	<-closed
+	t.Log("fetching closed")
+
+}
+
 func TestOperationControllerGeneric(t *testing.T) {
 	afs, err := initFS()
 	if err != nil {

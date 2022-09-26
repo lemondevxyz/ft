@@ -48,6 +48,13 @@ func EventOperationNew(o *Operation) sse.Event {
 	}
 }
 
+func EventOperationUpdate(o *Operation) sse.Event {
+	return sse.Event{
+		Event: "operation-update",
+		Data:  o,
+	}
+}
+
 func EventOperationAll(o map[string]*Operation) sse.Event {
 	return sse.Event{
 		Event: "operation-all",
