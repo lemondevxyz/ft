@@ -190,14 +190,18 @@ func TestOperationControllerNewOperation(t *testing.T) {
 
 	id, ch := channel.Subscribe()
 
-	ev := make(chan sse.Event)
+	ev := make(chan struct{})
+	t.Log("before goroutine")
 	go func() {
-		val := <-ch
-		ev <- val
+		for i := 0; i < 3; i++ {
+			<-ch
+		}
+		ev <- struct{}{}
 	}()
 
 	ctrl := &model.DummyController{}
 
+	t.Log("new op")
 	_, err = oc.NewOperation(encodeJSON(OperationNewData{
 		WriterID: id,
 		Src:      []string{"src"},
@@ -207,8 +211,11 @@ func TestOperationControllerNewOperation(t *testing.T) {
 		t.Fatalf("couldn't start operation: %s", err.Error())
 	}
 
+	t.Log("waiting 4 event")
 	<-ev
+	t.Log("done; unsubscribe")
 	channel.Unsubscribe(id)
+	t.Log("done")
 }
 
 func TestOperationControllerStatus(t *testing.T) {

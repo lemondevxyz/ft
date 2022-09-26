@@ -300,12 +300,10 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		return nil, err
 	}
 
+	o, _ := oc.GetOperationOrFail(nil, id)
+
 	oper.SetLogger(&operationLogger{oc.channel, id})
 
-	res := OperationNewResult{id}
-	ctrl.Value(res)
-
-	o, _ := oc.GetOperationOrFail(nil, id)
 	oper.SetProgress(&ProgressBroadcaster{
 		id:      id,
 		channel: oc.channel,
@@ -324,6 +322,9 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 			}
 		}
 	}(o)
+
+	res := OperationNewResult{id}
+	ctrl.Value(res)
 
 	return &res, nil
 }
