@@ -227,7 +227,9 @@ func DirToCollection(fs afero.Fs, base string) (Collection, error) {
 	}
 
 	for i := range collect {
+		collect[i].Fs = afero.NewBasePathFs(fs, path.Dir(base))
 		collect[i].AbsPath = path.Join(base, collect[i].Path)
+		collect[i].Path = path.Join(path.Base(base), collect[i].Path)
 		//collect[i].basePath = base
 	}
 

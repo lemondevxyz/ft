@@ -20,31 +20,31 @@ type operationLogger struct {
 }
 
 func (l *operationLogger) Debugf(format string, v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Debugln(v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Infof(format string, v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Infoln(v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Warningf(format string, v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Warningln(v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Errorf(format string, v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Errorln(v ...interface{}) {
-	l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Close() error { return nil }
@@ -313,6 +313,18 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 
 	go oc.channel.Announce(EventOperationNew(o))
 
+	go func(op *Operation) {
+		for {
+			err := op.Error()
+			if op.Status() == model.Aborted || op.Status() == model.Finished {
+				oc.channel.Announce(EventOperationDone(op.ID))
+				break
+			} else {
+				oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
+			}
+		}
+	}(o)
+
 	return &res, nil
 }
 
@@ -505,18 +517,6 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 	op.Start()
 	go oc.channel.Announce(EventOperationUpdate(op))
 	ctrl.Value(strct)
-
-	go func() {
-		for {
-			err := op.Error()
-			if op.Status() == model.Aborted || op.Status() == model.Finished {
-				oc.channel.Announce(EventOperationDone(op.ID))
-				break
-			} else {
-				oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
-			}
-		}
-	}()
 
 	return nil
 }
