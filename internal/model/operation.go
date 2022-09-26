@@ -227,7 +227,7 @@ func DirToCollection(fs afero.Fs, base string) (Collection, error) {
 	}
 
 	for i := range collect {
-		collect[i].Path = path.Join(base, collect[i].Path)
+		collect[i].AbsPath = path.Join(base, collect[i].Path)
 		//collect[i].basePath = base
 	}
 
@@ -290,7 +290,7 @@ func (o *Operation) SetLogger(l distillog.Logger) {
 
 // SetProgress sets the progress setter for the files.
 func (o *Operation) SetProgress(v ProgressSetter) {
-	o.logger.Infof("SetProgress: %v", v)
+	o.logger.Debugf("SetProgress: %v", v)
 	o.opProgress = v
 }
 
@@ -337,7 +337,7 @@ func (o *Operation) Exit() error {
 
 	o.logger.Infoln("Aborted the operation")
 	o.status = Aborted
-	o.logger.Infoln("Closing the exit channel")
+	o.logger.Debugln("Closing the exit channel")
 	close(o.exit)
 	close(o.err)
 
@@ -399,9 +399,9 @@ func (o *Operation) Proceed() {
 // Error returns the error if there is any, or hangs if there isn't an
 // error.
 func (o *Operation) Error() OperationError {
-	o.logger.Infoln("Error(): waiting for channel recv")
+	o.logger.Debugln("Error(): waiting for channel recv")
 	err := <-o.err
-	o.logger.Infoln("Error(): done channel recv")
+	o.logger.Debugln("Error(): done channel recv")
 	return err
 }
 
@@ -416,7 +416,7 @@ func (o *Operation) Sources() Collection {
 func (o *Operation) Index() int {
 	o.srcLock()
 	defer o.srcUnlock()
-	o.logger.Infof("Index: %d\n", len(o.src))
+	o.logger.Debugf("Index: %d\n", len(o.src))
 	return o.srcIndex
 }
 
@@ -425,7 +425,7 @@ func (o *Operation) SetSources(c Collection) {
 	o.srcLock()
 	old := len(o.src)
 	o.src = c
-	o.logger.Infof("SetSources(old, new): %d, %d\n", old, len(o.src))
+	o.logger.Debugf("SetSources(old, new): %d, %d\n", old, len(o.src))
 	o.srcUnlock()
 }
 
@@ -438,10 +438,10 @@ func (o *Operation) do() {
 		for i := 0; i < len(o.src); i++ {
 			select {
 			case <-o.exit:
-				o.logger.Infoln("do(): <-o.exit")
+				o.logger.Debugln("do(): <-o.exit")
 				o.lock()
 				if o.status != Aborted && o.status != Finished {
-					o.logger.Infoln("Status != Aborted|Finished")
+					o.logger.Debugln("Status != Aborted|Finished")
 					o.status = Aborted
 
 					close(o.err)
@@ -449,6 +449,7 @@ func (o *Operation) do() {
 				}
 				o.unlock()
 
+				o.logger.Debugln("do(): returning from <-o.exit")
 				return
 			default:
 				o.lock()
@@ -463,18 +464,18 @@ func (o *Operation) do() {
 
 				o.srcLock()
 				srcFile := o.src[i]
-				o.logger.Infof("do(): srcFile: %d, %s\n", i, srcFile.File.Name())
+				o.logger.Debugf("do(): srcFile: %d, %s\n", i, srcFile.File.Name())
 				o.srcIndex = i
 				o.srcUnlock()
 
-				o.logger.Infoln("do(): waiting")
+				o.logger.Debugln("do(): waiting")
 				o.errWg.Wait()
-				o.logger.Infoln("do(): done waiting")
+				o.logger.Debugln("do(): done waiting")
 				o.errWg.Add(1)
 
 				errObj := OperationError{Src: srcFile, Dst: o.dst}
 				errOut := func(err error) {
-					o.logger.Errorf("do(): errOut: %s\n", err)
+					o.logger.Debugf("do(): errOut: %s\n", err)
 					errObj.Error = err
 					o.lock()
 					if o.status != Aborted {
@@ -551,13 +552,13 @@ func (o *Operation) do() {
 
 				o.logger.Infof("do(): done transfer: %d, %d, %s\n", i, len(o.src), srcFile.File.Name())
 				o.errWg.Done()
-				o.logger.Infoln("do(): sending error")
+				o.logger.Debugln("do(): sending empty error")
 				o.lock()
 				if o.status != Aborted && o.status != Finished {
 					o.err <- errObj
 				}
 				o.unlock()
-				o.logger.Infoln("do(): done")
+				o.logger.Debugln("do(): done")
 			}
 		}
 
@@ -565,9 +566,9 @@ func (o *Operation) do() {
 		o.lock()
 		if o.status != Aborted {
 			o.status = Finished
-			o.logger.Infoln("do(): closing o.err")
+			o.logger.Debugln("do(): closing o.err")
 			close(o.err)
-			o.logger.Infoln("do(): closing o.exit")
+			o.logger.Debugln("do(): closing o.exit")
 			close(o.exit)
 		}
 		o.unlock()

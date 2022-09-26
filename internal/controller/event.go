@@ -96,3 +96,13 @@ func EventOperationError(id string, dst string, err model.OperationError) sse.Ev
 		}{id, err.Src.File.Name(), dst, errstr},
 	}
 }
+
+func EventOperationLog(id string, message string) sse.Event {
+	return sse.Event{
+		Event: "operation-log",
+		Data: struct {
+			ID      string `json:"id"`
+			Message string `json:"message"`
+		}{id, message},
+	}
+}

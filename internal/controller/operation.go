@@ -14,6 +14,41 @@ import (
 	"github.com/thanhpk/randstr"
 )
 
+type operationLogger struct {
+	ch *Channel
+	ID string
+}
+
+func (l *operationLogger) Debugf(format string, v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintf(format, v...)))
+}
+func (l *operationLogger) Debugln(v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintln(v...)))
+}
+
+func (l *operationLogger) Infof(format string, v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintf(format, v...)))
+}
+func (l *operationLogger) Infoln(v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintln(v...)))
+}
+
+func (l *operationLogger) Warningf(format string, v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintf(format, v...)))
+}
+func (l *operationLogger) Warningln(v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintln(v...)))
+}
+
+func (l *operationLogger) Errorf(format string, v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintf(format, v...)))
+}
+func (l *operationLogger) Errorln(v ...interface{}) {
+	l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintln(v...)))
+}
+
+func (l *operationLogger) Close() error { return nil }
+
 // Channel is a data structure that can collect an infinite amount of
 // subscribers with the intent of sending events to each subscriber via
 // its functions.
@@ -222,7 +257,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		}
 
 		if fi.File.IsDir() {
-			_, err := model.DirToCollection(oc.fs, fi.Path)
+			files, err := model.DirToCollection(oc.fs, fi.Path)
 			if err != nil {
 				ctrl.Error(model.ControllerError{
 					ID:     "model/fs-to-collection",
@@ -232,10 +267,11 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 				return nil, err
 			}
 
-			collection = append(collection)
+			collection = append(collection, files...)
 		} else {
 			fi.Fs = afero.NewBasePathFs(oc.fs, path.Dir(fi.Path))
 			fi.Path = path.Base(fi.Path)
+			fi.AbsPath = fi.Path
 			collection = append(collection, *fi)
 		}
 	}
@@ -263,6 +299,8 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		})
 		return nil, err
 	}
+
+	oper.SetLogger(&operationLogger{oc.channel, id})
 
 	res := OperationNewResult{id}
 	ctrl.Value(res)
