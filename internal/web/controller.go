@@ -159,11 +159,11 @@ func (s *server) Start() error {
 			op.POST("/resume", func(c *gin.Context) { s.opController.Resume(c.Request.Body, c.MustGet("req").(model.Controller)) })
 			op.POST("/exit", func(c *gin.Context) { s.opController.Exit(c.Request.Body, c.MustGet("req").(model.Controller)) })
 			op.POST("/start", func(c *gin.Context) { s.opController.Start(c.Request.Body, c.MustGet("req").(model.Controller)) })
+			op.POST("/size", func(c *gin.Context) { s.opController.Size(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		}
 		op.POST("/status", func(c *gin.Context) { s.opController.Status(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/proceed", func(c *gin.Context) { s.opController.Proceed(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/set-sources", func(c *gin.Context) { s.opController.SetSources(c.Request.Body, c.MustGet("req").(model.Controller)) })
-		//op.POST("/size", func(c *gin.Context) { s.opController.Size(c.Request.Body, c.MustGet("req").(model.Controller)) })
 	}
 	{
 		fs := protected.Group("/fs")

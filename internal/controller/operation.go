@@ -523,25 +523,24 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 	return nil
 }
 
-/*
-	type OperationSizeValue struct {
-		Size int64 `json:"size"`
+// DEPRECATED
+type OperationSizeValue struct {
+	Size int64 `json:"size"`
+}
+
+func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*OperationSizeValue, error) {
+	strct := &OperationGenericData{}
+	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
+		return nil, err
 	}
 
-	func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*OperationSizeValue, error) {
-		strct := &OperationGenericData{}
-		if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-			return nil, err
-		}
-
-		op, err := oc.GetOperationOrFail(ctrl, strct.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		val := &OperationSizeValue{op.Size()}
-
-		ctrl.Value(val)
-		return val, nil
+	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
+	if err != nil {
+		return nil, err
 	}
-*/
+
+	val := &OperationSizeValue{op.Size()}
+
+	ctrl.Value(val)
+	return val, nil
+}
