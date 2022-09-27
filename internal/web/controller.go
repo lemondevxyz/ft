@@ -172,6 +172,7 @@ func (s *server) Start() error {
 		fs.POST("/move", func(c *gin.Context) { s.opFs.Move(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		fs.POST("/mkdir", func(c *gin.Context) { s.opFs.MkdirAll(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		fs.POST("/readdir", func(c *gin.Context) { s.opFs.ReadDir(c.Request.Body, c.MustGet("req").(model.Controller)) })
+		fs.POST("/verify", func(c *gin.Context) { s.opFs.Verify(c.Request.Body, c.MustGet("req").(model.Controller)) })
 	}
 
 	s.r = &http.Server{
