@@ -5,7 +5,7 @@ import "sync"
 type sorcerer struct {
 	mtx   sync.RWMutex
 	index int
-	slice interface{}
+	slice Collection
 }
 
 func (s *sorcerer) setIndex(i int) {
@@ -14,7 +14,7 @@ func (s *sorcerer) setIndex(i int) {
 	s.mtx.Unlock()
 }
 
-func (s *sorcerer) setSlice(v interface{}) {
+func (s *sorcerer) setSlice(v Collection) {
 	s.mtx.Lock()
 	s.slice = v
 	s.mtx.Unlock()
@@ -26,7 +26,7 @@ func (s *sorcerer) getIndex() int {
 	return s.index
 }
 
-func (s *sorcerer) getSlice() interface{} {
+func (s *sorcerer) getSlice() Collection {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 	return s.slice

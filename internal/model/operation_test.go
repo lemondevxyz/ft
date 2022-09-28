@@ -90,7 +90,7 @@ func TestOperationSources(t *testing.T) {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
 
-	if !reflect.DeepEqual(op.Sources(), op.src.getSlice().(Collection)) {
+	if !reflect.DeepEqual(op.Sources(), op.src.getSlice()) {
 		t.Fatalf("sources aren't equal")
 	}
 }
@@ -269,7 +269,6 @@ func TestOperationSkip(t *testing.T) {
 	runs := 0
 	opDelay = time.Millisecond
 	for {
-		t.Log("asd")
 
 		err := op.Error()
 		if err.Error != nil {
@@ -279,8 +278,9 @@ func TestOperationSkip(t *testing.T) {
 		if op.Index() == 1 {
 			op.SetIndex(3)
 		}
-		op.mtx.Unlock()
+		t.Log(op.Index())
 		runs++
+		op.mtx.Unlock()
 
 		if op.Index()+1 > len(op.Sources()) {
 			break

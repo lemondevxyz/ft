@@ -278,7 +278,7 @@ func (o *Operation) Pause() error {
 // cached value and calling the function only when the sources have changed.
 func (o *Operation) Size() int64 {
 	var size int64 = 0
-	src := o.src.getSlice().(Collection)
+	src := o.src.getSlice()
 	for _, v := range src {
 		size += v.File.Size()
 	}
@@ -323,7 +323,7 @@ func (o *Operation) Error() OperationError {
 
 // Sources returns the list of files that are to be copied ot the destination.
 func (o *Operation) Sources() Collection {
-	return o.src.getSlice().(Collection)
+	return o.src.getSlice()
 }
 
 // Index returns the index of the current file
@@ -350,7 +350,7 @@ func (o *Operation) do() {
 	o.once.Do(func() {
 		o.src.setIndex(0)
 		for {
-			arr := o.src.getSlice().(Collection)
+			arr := o.src.getSlice()
 			index := o.src.getIndex()
 
 			if len(arr) <= index {
@@ -459,7 +459,14 @@ func (o *Operation) do() {
 								o.mtx.RUnlock()
 								break
 							}
+
+							if o.src.getIndex() != index {
+								o.mtx.RUnlock()
+								return 0, ErrSkipFile
+							}
 							o.mtx.RUnlock()
+
+							time.Sleep(opDelay)
 						}
 						return srcReader.Read(p)
 					}
@@ -513,7 +520,7 @@ type PublicOperation struct {
 func (po PublicOperation) Map() map[string]interface{} {
 	return map[string]interface{}{
 		"index":  po.Index(),
-		"src":    po.src.getSlice().(Collection),
+		"src":    po.src.getSlice(),
 		"status": po.status,
 		"dst":    po.Destination,
 	}

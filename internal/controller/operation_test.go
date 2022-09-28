@@ -315,6 +315,7 @@ func TestOperationControllerStatus(t *testing.T) {
 
 }
 
+// DEPRECATED
 func TestOperationControllerGeneric(t *testing.T) {
 	afs, err := initFS()
 	if err != nil {
@@ -410,4 +411,72 @@ func TestOperationControllerGeneric(t *testing.T) {
 	<-closed
 	t.Log("fetching closed")
 
+}
+
+func TestOperationControllerSetIndex(t *testing.T) {
+	afs, err := initFS()
+	if err != nil {
+		t.Fatalf("initFS: %s", err.Error())
+	}
+
+	channel := &Channel{}
+
+	oc, err := NewOperationController(channel, afs)
+	if err != nil {
+		t.Fatalf("NewOperationController: %s", err.Error())
+	}
+
+	closed := make(chan struct{})
+
+	id, ch := channel.Subscribe()
+
+	open := true
+	started := false
+
+	go func() {
+		for open {
+			started = true
+			<-ch
+		}
+
+		close(closed)
+	}()
+
+	for !started {
+	}
+
+	dummy := &model.DummyController{}
+	res, err := oc.NewOperation(encodeJSON(OperationNewData{
+		WriterID: id,
+		Src:      []string{"src", "new.txt"},
+		Dst:      "dst",
+	}), dummy)
+	if err != nil {
+		t.Fatalf("NewOperation: %s", err.Error())
+	}
+
+	op, err := oc.GetOperationOrFail(dummy, res.ID)
+	if err != nil {
+		t.Fatalf("GetOperationOrFail: %s", err.Error())
+	}
+
+	err = oc.SetIndex(encodeJSON(OperationSetIndexValue{
+		ID:    res.ID,
+		Index: 12,
+	}), dummy)
+	if err == nil {
+		t.Fatalf("oc.SetIndex shouldn't return nil, instead it should return an error saying that the index is bigger than expected")
+	}
+
+	err = oc.SetIndex(encodeJSON(OperationSetIndexValue{
+		ID:    res.ID,
+		Index: 2,
+	}), dummy)
+	if err != nil {
+		t.Fatalf("oc.SetIndex: %s", err.Error())
+	}
+
+	if op.Index() != 2 {
+		t.Fatalf("controller.SetIndex doesn't work: want: 2, have: %d", op.Index())
+	}
 }

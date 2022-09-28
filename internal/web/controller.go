@@ -164,6 +164,7 @@ func (s *server) Start() error {
 		op.POST("/status", func(c *gin.Context) { s.opController.Status(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/proceed", func(c *gin.Context) { s.opController.Proceed(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		op.POST("/set-sources", func(c *gin.Context) { s.opController.SetSources(c.Request.Body, c.MustGet("req").(model.Controller)) })
+		op.POST("/set-index", func(c *gin.Context) { s.opController.SetSources(c.Request.Body, c.MustGet("req").(model.Controller)) })
 	}
 	{
 		fs := protected.Group("/fs")

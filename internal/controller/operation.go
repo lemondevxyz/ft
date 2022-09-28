@@ -405,10 +405,6 @@ type OperationStatusData struct {
 }
 type OperationStatusValue OperationGenericValue
 
-func (oc *OperationController) SetIndex() {
-
-}
-
 // Generic methods
 
 func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error {
@@ -590,4 +586,38 @@ func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*Opera
 
 	ctrl.Value(val)
 	return val, nil
+}
+
+type OperationSetIndexData struct {
+	ID    string `json:"id"`
+	Index int    `json:"index"`
+}
+type OperationSetIndexValue OperationSetIndexData
+
+func (oc *OperationController) SetIndex(rd io.Reader, ctrl model.Controller) error {
+	strct := &OperationSetIndexData{}
+	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
+		return err
+	}
+
+	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
+	if err != nil {
+		return err
+	}
+
+	if strct.Index >= len(op.Sources()) {
+		err := fmt.Errorf("index is larger than the amount of sources")
+
+		ctrl.Error(model.ControllerError{
+			ID:     "operation-invalid-index",
+			Reason: err.Error(),
+		})
+
+		return err
+	}
+
+	op.SetIndex(strct.Index)
+	ctrl.Value(strct)
+
+	return nil
 }
