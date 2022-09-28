@@ -15,105 +15,17 @@ import (
 	"github.com/spf13/afero"
 )
 
-type Logger struct {
-	mtx sync.Mutex
-	log distillog.Logger
-}
-
-func (l *Logger) lock()   { l.mtx.Lock() }
-func (l *Logger) unlock() { l.mtx.Unlock() }
-
-func (l *Logger) Logger() distillog.Logger {
-	l.lock()
-	defer l.unlock()
-	return l.log
-}
-
-func (l *Logger) SetLogger(log distillog.Logger) {
-	l.lock()
-	l.log = log
-	l.unlock()
-}
-
-func (l *Logger) Debugf(format string, v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-		l.log.Debugf(format, v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Debugln(v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-
-		l.log.Debugln(v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Infof(format string, v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-
-		l.log.Infof(format, v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Infoln(v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-		l.log.Infoln(v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Warningf(format string, v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-		l.log.Warningf(format, v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Warningln(v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-		l.log.Warningln(v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-		l.log.Errorf(format, v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Errorln(v ...interface{}) {
-	l.lock()
-	if l.log != nil {
-		l.log.Errorln(v...)
-	}
-	l.unlock()
-}
-
-func (l *Logger) Close() error {
-	l.lock()
-	defer l.unlock()
-	return l.log.Close()
-}
+var opDelay = time.Millisecond * 100
 
 // ProgressSetter is an interface that allows for progress setting for
 // files. Whenever a file gets written to in *Operation, ProgressSetter's
 // Set function is called.
 //
-// With conjuction of index and src, ProgressSetter can provide real
+// In conjuction with index and src, ProgressSetter can provide real
 // time progress of the file transfers.
 type ProgressSetter interface {
+	// Set is a function that provides real-time updates (writes) for clients.
+	// Set must be safe for concurrent use.
 	Set(index int, written int64)
 }
 
@@ -165,7 +77,7 @@ type Operation struct {
 	// mtx field represents the mtx for the whole Operation
 	// mtx is locked whenever the status has been changed
 	// or during do at the start
-	mtx    sync.Mutex
+	mtx    sync.RWMutex
 	status uint8
 	once   sync.Once
 	err    chan OperationError
@@ -173,15 +85,13 @@ type Operation struct {
 	exit   chan struct{}
 	// src fields
 	// srcMtx is used whenever src or srcIndex is going to be modified
-	srcMtx   sync.Mutex
-	src      Collection
-	srcIndex int
+	src sorcerer
 	// the destination
 	dst afero.Fs
 	// progress fields
 	opProgress ProgressSetter
 	// logger
-	logger *Logger
+	logger *logger
 }
 
 var (
@@ -190,6 +100,7 @@ var (
 	ErrDstFile          = errors.New("dst file")
 	ErrDstAlreadyExists = errors.New("dst file already exists")
 	ErrSrcFile          = errors.New("src file")
+	ErrSkipFile         = errors.New("skip file")
 )
 
 // FsToCollection takes in an afero file system and turns it into a collection
@@ -237,19 +148,6 @@ func DirToCollection(fs afero.Fs, base string) (Collection, error) {
 	return collect, nil
 }
 
-func (o *Operation) lock()   { o.mtx.Lock() }
-func (o *Operation) unlock() { o.mtx.Unlock() }
-
-func (o *Operation) srcLock() {
-	o.srcMtx.Lock()
-	o.logger.Infoln("srcLock()")
-}
-
-func (o *Operation) srcUnlock() {
-	o.srcMtx.Unlock()
-	o.logger.Infoln("srcUnlock()")
-}
-
 type Collection []FileInfo
 
 type OperationProgress struct {
@@ -268,12 +166,18 @@ const (
 // NewOperation returns an operation object.
 func NewOperation(src Collection, dst afero.Fs) (*Operation, error) {
 	op := &Operation{
-		err:      make(chan OperationError),
-		exit:     make(chan struct{}),
-		src:      src,
-		dst:      dst,
-		srcIndex: -1,
-		logger:   &Logger{log: distillog.NewNullLogger("")}}
+		err:  make(chan OperationError),
+		exit: make(chan struct{}),
+		dst:  dst,
+		src: sorcerer{
+			index: -1,
+			slice: src,
+		},
+		logger: &logger{log: distillog.NewNullLogger("")}}
+
+	if len(src) == 0 {
+		return nil, fmt.Errorf("src cannot be empty")
+	}
 
 	for i, v := range src {
 		if v.File == nil || v.Fs == nil || len(v.Path) == 0 {
@@ -299,8 +203,8 @@ func (o *Operation) SetProgress(v ProgressSetter) {
 
 // Status returns the operation's status
 func (o *Operation) Status() uint8 {
-	o.lock()
-	defer o.unlock()
+	o.mtx.RLock()
+	defer o.mtx.RUnlock()
 
 	return o.status
 }
@@ -313,14 +217,17 @@ func (o *Operation) Destination() afero.Fs {
 
 // Start starts the operation
 func (o *Operation) Start() error {
-	defer o.unlock()
-	o.lock()
+	o.mtx.RLock()
 	if o.status != Default {
+		o.mtx.RUnlock()
 		return fmt.Errorf("cannot start an operation that has either already started, is resumed, has finished, or has been aborted")
 	}
+	o.mtx.RUnlock()
 
 	o.logger.Infoln("Started the operation")
+	o.mtx.Lock()
 	o.status = Started
+	o.mtx.Unlock()
 	go o.do()
 
 	return nil
@@ -332,14 +239,17 @@ func (o *Operation) Start() error {
 //
 // Exit makes an operation obsolete.
 func (o *Operation) Exit() error {
-	defer o.unlock()
-	o.lock()
+	o.mtx.RLock()
 	if o.status != Started && o.status != Paused {
+		o.mtx.RUnlock()
 		return fmt.Errorf("cannot exit out of an operation that has finished, hasn't started, or has been aborted")
 	}
+	o.mtx.RUnlock()
 
 	o.logger.Infoln("Aborted the operation")
+	o.mtx.Lock()
 	o.status = Aborted
+	o.mtx.Unlock()
 	o.logger.Debugln("Closing the exit channel")
 	close(o.exit)
 	close(o.err)
@@ -349,14 +259,16 @@ func (o *Operation) Exit() error {
 
 // Pause pauses the operation temporarily.
 func (o *Operation) Pause() error {
-	defer o.unlock()
-	o.lock()
-
+	o.mtx.RLock()
 	if o.status == Started {
+		o.mtx.RUnlock()
+		o.mtx.Lock()
 		o.status = Paused
+		o.mtx.Unlock()
 		o.logger.Infoln("Paused the operation")
 		return nil
 	}
+	o.mtx.RUnlock()
 
 	return fmt.Errorf("cannot pause a non-started operation")
 }
@@ -365,13 +277,12 @@ func (o *Operation) Pause() error {
 // is rather expensive as it contains tons of syscalls. Prefer to send a
 // cached value and calling the function only when the sources have changed.
 func (o *Operation) Size() int64 {
-	o.srcLock()
 	var size int64 = 0
-	for _, v := range o.src {
+	src := o.src.getSlice().(Collection)
+	for _, v := range src {
 		size += v.File.Size()
 	}
-	max := len(o.src)
-	o.srcUnlock()
+	max := len(src)
 
 	o.logger.Infof("Src Length: %d, Size: %d\n", max, size)
 
@@ -380,14 +291,16 @@ func (o *Operation) Size() int64 {
 
 // Resume resumes the operation.
 func (o *Operation) Resume() error {
-	defer o.unlock()
-	o.lock()
-
+	o.mtx.RLock()
 	if o.status == Paused {
+		o.mtx.RUnlock()
+		o.mtx.Lock()
 		o.status = Started
+		o.mtx.Unlock()
 		o.logger.Infoln("Resumed the operation")
 		return nil
 	}
+	o.mtx.RUnlock()
 
 	return fmt.Errorf("cannot resume a non-paused operation")
 }
@@ -410,26 +323,23 @@ func (o *Operation) Error() OperationError {
 
 // Sources returns the list of files that are to be copied ot the destination.
 func (o *Operation) Sources() Collection {
-	o.srcLock()
-	defer o.srcUnlock()
-	return o.src
+	return o.src.getSlice().(Collection)
 }
 
 // Index returns the index of the current file
 func (o *Operation) Index() int {
-	o.srcLock()
-	defer o.srcUnlock()
-	o.logger.Debugf("Index: %d\n", len(o.src))
-	return o.srcIndex
+	return o.src.getIndex()
 }
 
 // SetSources sets the sources for the operation.
 func (o *Operation) SetSources(c Collection) {
-	o.srcLock()
-	old := len(o.src)
-	o.src = c
-	o.logger.Debugf("SetSources(old, new): %d, %d\n", old, len(o.src))
-	o.srcUnlock()
+	o.src.setSlice(c)
+}
+
+// SetIndex sets the index for the collection. Can be used to skip a file
+// whilst it is being written to.
+func (o *Operation) SetIndex(n int) {
+	o.src.setIndex(n)
 }
 
 // do is the main loop for operation, it handles all file transfers
@@ -438,38 +348,45 @@ func (o *Operation) do() {
 	o.logger.Infoln("do()")
 
 	o.once.Do(func() {
-		for i := 0; i < len(o.src); i++ {
+		o.src.setIndex(0)
+		for {
+			arr := o.src.getSlice().(Collection)
+			index := o.src.getIndex()
+
+			if len(arr) <= index {
+				break
+			}
+
 			select {
 			case <-o.exit:
 				o.logger.Debugln("do(): <-o.exit")
-				o.lock()
+				o.mtx.RLock()
 				if o.status != Aborted && o.status != Finished {
 					o.logger.Debugln("Status != Aborted|Finished")
+					o.mtx.Lock()
 					o.status = Aborted
+					o.mtx.Unlock()
 
 					close(o.err)
 					close(o.exit)
 				}
-				o.unlock()
+				o.mtx.RUnlock()
 
 				o.logger.Debugln("do(): returning from <-o.exit")
 				return
 			default:
-				o.lock()
+				o.mtx.RLock()
 				if o.status == Paused {
+					o.mtx.RUnlock()
 					o.logger.Infoln("do(): paused")
-					i--
-					o.unlock()
-					time.Sleep(time.Millisecond * 100)
+					time.Sleep(opDelay)
 					continue
+				} else {
+					o.mtx.RUnlock()
 				}
-				o.unlock()
 
-				o.srcLock()
-				srcFile := o.src[i]
-				o.logger.Debugf("do(): srcFile: %d, %s\n", i, srcFile.File.Name())
-				o.srcIndex = i
-				o.srcUnlock()
+				srcFile := arr[index]
+				o.logger.Debugf("do(): srcFile: %d, %s\n", index, srcFile.File.Name())
 
 				o.logger.Debugln("do(): waiting")
 				o.errWg.Wait()
@@ -480,12 +397,11 @@ func (o *Operation) do() {
 				errOut := func(err error) {
 					o.logger.Debugf("do(): errOut: %s\n", err)
 					errObj.Error = err
-					o.lock()
+					o.mtx.RLock()
 					if o.status != Aborted {
 						o.err <- errObj
 					}
-					o.unlock()
-					i--
+					o.mtx.RUnlock()
 					o.errWg.Add(1)
 				}
 
@@ -517,16 +433,15 @@ func (o *Operation) do() {
 				}
 
 				var size int64 = 0
+				o.logger.Debugln("starting io.Copy")
 				_, err = io.Copy(progressWriter(func(p []byte) (int, error) {
 					n, err := dstWriter.Write(p)
 
-					o.lock()
 					if o.opProgress != nil {
 						// allow changing of size at writing speed levels
 						size += int64(n)
-						o.opProgress.Set(i, int64(size))
+						o.opProgress.Set(index, int64(size))
 					}
-					o.unlock()
 
 					return n, err
 				}), readerFunc(func(p []byte) (int, error) {
@@ -534,18 +449,22 @@ func (o *Operation) do() {
 					case <-o.exit:
 						return 0, ErrCancelled
 					default:
+						if o.src.getIndex() != index {
+							return 0, ErrSkipFile
+						}
+
 						for {
-							o.lock()
+							o.mtx.RLock()
 							if o.status != Paused {
-								o.unlock()
+								o.mtx.RUnlock()
 								break
 							}
-							o.unlock()
+							o.mtx.RUnlock()
 						}
 						return srcReader.Read(p)
 					}
 				}))
-				if err != nil {
+				if err != nil && err != ErrSkipFile {
 					errOut(fmt.Errorf("io.Copy: %w", err))
 					continue
 				}
@@ -553,28 +472,36 @@ func (o *Operation) do() {
 				dstWriter.Close()
 				srcReader.Close()
 
-				o.logger.Infof("do(): done transfer: %d, %d, %s\n", i, len(o.src), srcFile.File.Name())
+				o.logger.Infof("do(): done transfer: %d, %d, %s\n", index, len(arr), srcFile.File.Name())
 				o.errWg.Done()
 				o.logger.Debugln("do(): sending empty error")
-				o.lock()
+				o.mtx.RLock()
 				if o.status != Aborted && o.status != Finished {
 					o.err <- errObj
 				}
-				o.unlock()
+				o.mtx.RUnlock()
 				o.logger.Debugln("do(): done")
+
+				if err == nil {
+					o.src.setIndex(o.src.index + 1)
+				}
 			}
+
+			time.Sleep(opDelay)
 		}
 
 		o.logger.Infoln("do(): loop done")
-		o.lock()
+		o.mtx.RLock()
 		if o.status != Aborted {
+			o.mtx.Lock()
 			o.status = Finished
 			o.logger.Debugln("do(): closing o.err")
 			close(o.err)
 			o.logger.Debugln("do(): closing o.exit")
 			close(o.exit)
+			o.mtx.Unlock()
 		}
-		o.unlock()
+		o.mtx.RUnlock()
 	})
 }
 
@@ -586,7 +513,7 @@ type PublicOperation struct {
 func (po PublicOperation) Map() map[string]interface{} {
 	return map[string]interface{}{
 		"index":  po.Index(),
-		"src":    po.src,
+		"src":    po.src.getSlice().(Collection),
 		"status": po.status,
 		"dst":    po.Destination,
 	}

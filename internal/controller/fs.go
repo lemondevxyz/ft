@@ -258,6 +258,7 @@ func (f *FsController) Verify(rd io.Reader, ctrl model.Controller) error {
 
 		return err
 	}
+
 	xxh64 := xxhash.New()
 	io.Copy(xxh64, dstFile)
 	dstFile.Close()

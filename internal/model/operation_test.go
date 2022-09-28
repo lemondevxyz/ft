@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"os"
 	"reflect"
 	"sync"
@@ -10,38 +11,24 @@ import (
 	"github.com/spf13/afero"
 )
 
-func initFS() (afero.Fs, error) {
+func init() {
+	opDelay = 0
+}
+
+func initFS(t *testing.T) afero.Fs {
 	fs := afero.NewMemMapFs()
-	err := fs.Mkdir("content", 0755)
-	if err != nil {
-		return nil, err
+	errOut := func(filename string, data []byte) {
+		err := afero.WriteFile(fs, filename, data, 0755)
+		if err != nil {
+			t.Fatalf("WriteFile: %s", err.Error())
+		}
 	}
+	errOut("content/level1.txt", []byte("sad"))
+	errOut("content/level2/ok.txt", []byte("das"))
+	errOut("content/level3/dir1/ok.txt", []byte("das"))
+	errOut("content/level4/dir1/dir2/ok.txt", []byte("das"))
 
-	fi, err := fs.OpenFile("content/level1.txt", os.O_RDWR|os.O_CREATE, 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = fi.WriteString("asdsad")
-	if err != nil {
-		return nil, err
-	}
-	fi.Close()
-
-	err = fs.MkdirAll("content/level2/", 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	fi, err = fs.OpenFile("content/level2/ok.txt", os.O_RDWR|os.O_CREATE, 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	fi.WriteString("asd")
-	fi.Close()
-
-	return fs, nil
+	return fs
 }
 
 func TestDirToCollection(t *testing.T) {
@@ -77,10 +64,7 @@ func TestDirToCollection(t *testing.T) {
 }
 
 func TestNewOperation(t *testing.T) {
-	fs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
+	fs := initFS(t)
 
 	collection, err := FsToCollection(fs)
 	if err != nil {
@@ -94,10 +78,7 @@ func TestNewOperation(t *testing.T) {
 }
 
 func TestOperationSources(t *testing.T) {
-	fs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
+	fs := initFS(t)
 
 	collection, err := FsToCollection(fs)
 	if err != nil {
@@ -109,7 +90,7 @@ func TestOperationSources(t *testing.T) {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
 
-	if !reflect.DeepEqual(op.Sources(), op.src) {
+	if !reflect.DeepEqual(op.Sources(), op.src.getSlice().(Collection)) {
 		t.Fatalf("sources aren't equal")
 	}
 }
@@ -130,10 +111,7 @@ func (p *progressSetter) Set(index int, size int64) {
 }
 
 func TestOperationDo(t *testing.T) {
-	fs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
+	fs := initFS(t)
 
 	dst := afero.NewMemMapFs()
 	collection, err := FsToCollection(fs)
@@ -156,11 +134,14 @@ func TestOperationDo(t *testing.T) {
 			t.Fatal(err.Error)
 		}
 
-		if ps.m[i] != op.Sources()[i].File.Size() {
-			t.Fatalf("file size mismatch: want: %d, have: %d", op.Sources()[i].File.Size(), ps.m[i])
+		ps.Lock()
+		val := ps.m[i]
+		ps.Unlock()
+		if val != op.Sources()[i].File.Size() {
+			t.Fatalf("file size mismatch: want: %d, have: %d", op.Sources()[i].File.Size(), val)
 		} else {
 			t.Logf(op.Sources()[i].Path)
-			t.Logf("have: %d", ps.m[i])
+			t.Logf("have: %d", val)
 			t.Logf("written: %d", op.Sources()[i].File.Size())
 			t.Log()
 		}
@@ -184,11 +165,7 @@ func TestOperationAdd(t *testing.T) {
 	}
 	fi.Close()
 
-	fs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
-
+	fs := initFS(t)
 	dst := afero.NewMemMapFs()
 	collection, err := FsToCollection(fs)
 	if err != nil {
@@ -203,7 +180,9 @@ func TestOperationAdd(t *testing.T) {
 	op.Start()
 
 	added := false
+	t.Log("hya")
 	for i := 0; i < len(op.Sources()); i++ {
+		t.Log("henlo", op.Sources()[i])
 		err := op.Error()
 		if err.Error != nil {
 			t.Log(err.Error)
@@ -230,10 +209,7 @@ func TestOperationAdd(t *testing.T) {
 }
 
 func TestOperationPauseResume(t *testing.T) {
-	fs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
+	fs := initFS(t)
 
 	dst := afero.NewMemMapFs()
 	collection, err := FsToCollection(fs)
@@ -248,8 +224,9 @@ func TestOperationPauseResume(t *testing.T) {
 
 	op.Start()
 	op.Pause()
+	dur := opDelay * 2
 	start := time.Now()
-	time.Sleep(time.Millisecond * 50)
+	time.Sleep(dur)
 	op.Resume()
 
 	for i := 0; i < len(op.Sources()); i++ {
@@ -259,7 +236,58 @@ func TestOperationPauseResume(t *testing.T) {
 		}
 	}
 
-	if time.Now().Sub(start) <= time.Millisecond*50 {
+	if time.Now().Sub(start) <= opDelay*2 {
 		t.Fatalf("pause doesn't work properly")
+	}
+}
+
+type bufferCloser struct {
+	*bytes.Buffer
+}
+
+func (b *bufferCloser) Close() error { return nil }
+
+func TestOperationSkip(t *testing.T) {
+	fs := initFS(t)
+
+	dst := afero.NewMemMapFs()
+	collection, err := FsToCollection(fs)
+	if err != nil {
+		t.Fatalf("FsToCollection: %s", err.Error())
+	}
+
+	op, err := NewOperation(collection, dst)
+	if err != nil {
+		t.Fatalf("NewOperation: %s", err.Error())
+	}
+
+	//stream := &bufferCloser{&bytes.Buffer{}}
+	//log := distillog.NewStreamLogger("null", stream)
+	//scan := bufio.NewScanner(stream)
+
+	op.Start()
+	runs := 0
+	opDelay = time.Millisecond
+	for {
+		t.Log("asd")
+
+		err := op.Error()
+		if err.Error != nil {
+			t.Log(err.Error)
+		}
+		op.mtx.Lock()
+		if op.Index() == 1 {
+			op.SetIndex(3)
+		}
+		op.mtx.Unlock()
+		runs++
+
+		if op.Index()+1 > len(op.Sources()) {
+			break
+		}
+	}
+
+	if runs > 2 {
+		t.Fatalf("runs are more than %d", runs)
 	}
 }

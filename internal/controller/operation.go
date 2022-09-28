@@ -405,6 +405,10 @@ type OperationStatusData struct {
 }
 type OperationStatusValue OperationGenericValue
 
+func (oc *OperationController) SetIndex() {
+
+}
+
 // Generic methods
 
 func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error {
@@ -468,6 +472,7 @@ func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error
 	return nil
 }
 
+// DEPRECATED
 func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -486,6 +491,7 @@ func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error 
 	return nil
 }
 
+// DEPRECATED
 func (oc *OperationController) Resume(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -504,6 +510,7 @@ func (oc *OperationController) Resume(rd io.Reader, ctrl model.Controller) error
 	return nil
 }
 
+// DEPRECATED
 func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -522,6 +529,7 @@ func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error 
 	return nil
 }
 
+// DEPRECATED
 func (oc *OperationController) Exit(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
