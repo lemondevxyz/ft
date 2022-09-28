@@ -402,7 +402,6 @@ func (o *Operation) do() {
 						o.err <- errObj
 					}
 					o.mtx.RUnlock()
-					o.errWg.Add(1)
 				}
 
 				dirPath := path.Clean(path.Dir(srcFile.Path))

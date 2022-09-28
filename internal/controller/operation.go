@@ -605,7 +605,7 @@ func (oc *OperationController) SetIndex(rd io.Reader, ctrl model.Controller) err
 		return err
 	}
 
-	if strct.Index >= len(op.Sources()) {
+	if strct.Index > len(op.Sources()) {
 		err := fmt.Errorf("index is larger than the amount of sources")
 
 		ctrl.Error(model.ControllerError{

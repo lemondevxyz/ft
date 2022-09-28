@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amoghe/distillog"
 	"github.com/spf13/afero"
 )
 
@@ -246,6 +247,46 @@ type bufferCloser struct {
 }
 
 func (b *bufferCloser) Close() error { return nil }
+
+func TestOperationProceed(t *testing.T) {
+	fs := initFS(t)
+
+	dst := afero.NewMemMapFs()
+	err := afero.WriteFile(dst, "content/level1.txt", []byte("asdad"), 0755)
+	if err != nil {
+		t.Fatalf("afero.WriteFile: %s", err.Error())
+	}
+
+	collection, err := FsToCollection(fs)
+	if err != nil {
+		t.Fatalf("FsToCollection: %s", err.Error())
+	}
+
+	op, err := NewOperation(collection, dst)
+	if err != nil {
+		t.Fatalf("NewOperation: %s", err.Error())
+	}
+	op.SetLogger(distillog.NewStdoutLogger(""))
+	op.Start()
+
+	i := 0
+	for {
+		t.Log("oke")
+		err := op.Error()
+		if err.Error == ErrDstAlreadyExists {
+			dst.Remove("content/level1.txt")
+			op.Proceed()
+			t.Log("hya")
+		}
+
+		t.Log(op.Sources()[i])
+		i++
+
+		if i >= len(op.Sources()) {
+			break
+		}
+	}
+}
 
 func TestOperationSkip(t *testing.T) {
 	fs := initFS(t)
