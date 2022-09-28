@@ -61,6 +61,7 @@ type OperationFile struct {
 // OperationError is an error that can occur in the middle of an
 // operation.
 type OperationError struct {
+	Index int
 	Src   FileInfo
 	Dst   afero.Fs
 	Error error
@@ -393,7 +394,7 @@ func (o *Operation) do() {
 				o.logger.Debugln("do(): done waiting")
 				o.errWg.Add(1)
 
-				errObj := OperationError{Src: srcFile, Dst: o.dst}
+				errObj := OperationError{Src: srcFile, Dst: o.dst, Index: index}
 				errOut := func(err error) {
 					o.logger.Debugf("do(): errOut: %s\n", err)
 					errObj.Error = err
@@ -498,16 +499,18 @@ func (o *Operation) do() {
 
 		o.logger.Infoln("do(): loop done")
 		o.mtx.RLock()
-		if o.status != Aborted {
+		status := o.status
+		o.mtx.RUnlock()
+
+		if status != Aborted {
 			o.mtx.Lock()
 			o.status = Finished
+			o.mtx.Unlock()
 			o.logger.Debugln("do(): closing o.err")
 			close(o.err)
 			o.logger.Debugln("do(): closing o.exit")
 			close(o.exit)
-			o.mtx.Unlock()
 		}
-		o.mtx.RUnlock()
 	})
 }
 

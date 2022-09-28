@@ -20,31 +20,31 @@ type operationLogger struct {
 }
 
 func (l *operationLogger) Debugf(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG] "+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Debugln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG] "+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Infof(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[INFO] "+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Infoln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[INFO]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[INFO] "+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Warningf(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING] "+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Warningln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING] "+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Errorf(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintf(format, v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR] "+fmt.Sprintf(format, v...)))
 }
 func (l *operationLogger) Errorln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR]"+fmt.Sprintln(v...)))
+	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR] "+fmt.Sprintln(v...)))
 }
 
 func (l *operationLogger) Close() error { return nil }
@@ -559,7 +559,7 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 		return err
 	}
 
-	go oc.channel.Announce(EventOperationUpdate(op))
+	//go oc.channel.Announce(EventOperationUpdate(op))
 	op.Proceed()
 	ctrl.Value(strct)
 
