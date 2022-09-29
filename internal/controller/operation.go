@@ -289,6 +289,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 			fi.Fs = afero.NewBasePathFs(oc.fs, path.Dir(fi.Path))
 			fi.AbsPath = fi.Path
 			fi.Path = path.Base(fi.Path)
+
 			collection = append(collection, *fi)
 		}
 	}

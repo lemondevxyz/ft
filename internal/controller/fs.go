@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"os"
 	"path"
@@ -133,7 +134,25 @@ func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirVal
 	ret := []model.OsFileInfo{}
 	for _, v := range fis {
 		path := path.Join(r.Name, v.Name())
-		ret = append(ret, model.NewOsFileInfo(v, path, path))
+
+		file := model.NewOsFileInfo(v, path, path)
+		if file.Mode()&fs.ModeSymlink != 0 {
+			rd, ok := f.fs.(afero.LinkReader)
+			if ok {
+				absPath, err := rd.ReadlinkIfPossible(path)
+				if err == nil {
+					stat, err := f.fs.Stat(absPath)
+					if err == nil {
+						file.AbsolutePath = absPath
+
+						val := stat.Mode()
+						file.FakeMode = &val
+					}
+				}
+			}
+		}
+
+		ret = append(ret, file)
 	}
 
 	val := &ReadDirValue{Files: ret}
