@@ -283,9 +283,9 @@ func (o *Operation) Size() int64 {
 	for _, v := range src {
 		size += v.File.Size()
 	}
-	max := len(src)
+	/////max := len(src)
 
-	o.logger.Infof("Src Length: %d, Size: %d\n", max, size)
+	//o.logger.Infof("Src Length: %d, Size: %d\n", max, size)
 
 	return size
 }
@@ -391,6 +391,13 @@ func (o *Operation) do() {
 
 				o.logger.Debugln("do(): waiting")
 				o.errWg.Wait()
+				time.Sleep(opDelay)
+
+				if o.src.getIndex() != index {
+					o.logger.Debugln("do(): continue because index has been updated")
+					continue
+				}
+
 				o.logger.Debugln("do(): done waiting")
 				o.errWg.Add(1)
 
@@ -476,6 +483,7 @@ func (o *Operation) do() {
 					continue
 				}
 
+				//
 				dstWriter.Close()
 				srcReader.Close()
 

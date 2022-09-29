@@ -15,36 +15,53 @@ import (
 )
 
 type operationLogger struct {
-	ch *Channel
-	ID string
+	ch  *Channel
+	ID  string
+	mtx sync.Mutex
 }
 
 func (l *operationLogger) Debugf(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG] "+fmt.Sprintf(format, v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[DEBUG] "+fmt.Sprintf(format, v...)))
+	l.mtx.Unlock()
 }
 func (l *operationLogger) Debugln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[DEBUG] "+fmt.Sprintln(v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[DEBUG] "+fmt.Sprintln(v...)))
+	l.mtx.Unlock()
 }
 
 func (l *operationLogger) Infof(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[INFO] "+fmt.Sprintf(format, v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[INFO] "+fmt.Sprintf(format, v...)))
+	l.mtx.Unlock()
 }
 func (l *operationLogger) Infoln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[INFO] "+fmt.Sprintln(v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[INFO] "+fmt.Sprintln(v...)))
+	l.mtx.Unlock()
 }
 
 func (l *operationLogger) Warningf(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING] "+fmt.Sprintf(format, v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[WARNING] "+fmt.Sprintf(format, v...)))
+	l.mtx.Unlock()
 }
 func (l *operationLogger) Warningln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[WARNING] "+fmt.Sprintln(v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[WARNING] "+fmt.Sprintln(v...)))
+	l.mtx.Unlock()
 }
 
 func (l *operationLogger) Errorf(format string, v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR] "+fmt.Sprintf(format, v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[ERROR] "+fmt.Sprintf(format, v...)))
+	l.mtx.Unlock()
 }
 func (l *operationLogger) Errorln(v ...interface{}) {
-	go l.ch.Announce(EventOperationLog(l.ID, "[ERROR] "+fmt.Sprintln(v...)))
+	l.mtx.Lock()
+	l.ch.Announce(EventOperationLog(l.ID, "[ERROR] "+fmt.Sprintln(v...)))
+	l.mtx.Unlock()
 }
 
 func (l *operationLogger) Close() error { return nil }
@@ -270,8 +287,8 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 			collection = append(collection, files...)
 		} else {
 			fi.Fs = afero.NewBasePathFs(oc.fs, path.Dir(fi.Path))
-			fi.Path = path.Base(fi.Path)
 			fi.AbsPath = fi.Path
+			fi.Path = path.Base(fi.Path)
 			collection = append(collection, *fi)
 		}
 	}
@@ -302,7 +319,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 
 	o, _ := oc.GetOperationOrFail(nil, id)
 
-	oper.SetLogger(&operationLogger{oc.channel, id})
+	oper.SetLogger(&operationLogger{oc.channel, id, sync.Mutex{}})
 
 	oper.SetProgress(&ProgressBroadcaster{
 		id:      id,
@@ -316,6 +333,9 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 			err := op.Error()
 			if op.Status() == model.Aborted || op.Status() == model.Finished {
 				oc.channel.Announce(EventOperationDone(op.ID))
+				oc.operationsMtx.Lock()
+				delete(oc.operations, op.ID)
+				oc.operationsMtx.Unlock()
 				break
 			} else {
 				oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
