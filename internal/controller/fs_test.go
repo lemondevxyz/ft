@@ -199,3 +199,53 @@ func TestFsVerify(t *testing.T) {
 		}
 	}
 }
+
+func TestFsSize(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	writeFile(fs, "src", "hello world", t)
+
+	ctrl, err := NewFsController(&Channel{}, fs)
+	if err != nil {
+		t.Fatalf("NewFsController: %s", err.Error())
+	}
+
+	size, err := ctrl.Size(encodeJSON(FsGenericData{
+		Name: "src",
+	}), &model.DummyController{})
+	if err != nil {
+		t.Fatalf("ctrl.Size: %s", err.Error())
+	}
+
+	stat, err := fs.Stat("src")
+	if err != nil {
+		t.Fatalf("fs.Stat: %s", err.Error())
+	}
+	if size != stat.Size() {
+		t.Fatalf("sizes do not match: %d, %d", size, stat.Size())
+	}
+
+	err = fs.MkdirAll("data", 0755)
+	if err != nil {
+		t.Fatalf("fs.MkdirAll: %s", err.Error())
+	}
+
+	writeFile(fs, "data/1.txt", "hello world the prequel", t)
+	writeFile(fs, "data/2.txt", "hello world the sequel", t)
+
+	stat, err = fs.Stat("data")
+	if err != nil {
+		t.Fatalf("fs.Stat: %s", err.Error())
+	}
+
+	var want int64 = stat.Size() + 23 + 22
+	have, err := ctrl.Size(encodeJSON(FsGenericData{
+		Name: "data",
+	}), &model.DummyController{})
+	if err != nil {
+		t.Fatalf("ctrl.Size: %s", err.Error())
+	}
+
+	if want != have {
+		t.Fatalf("%d != %d", want, have)
+	}
+}

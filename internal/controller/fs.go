@@ -162,6 +162,59 @@ func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirVal
 
 }
 
+type SizeData FsGenericData
+type SizeValue struct {
+	Size int64 `json:"size"`
+}
+
+func (f *FsController) Size(rd io.Reader, ctrl model.Controller) (int64, error) {
+	val := &SizeData{}
+	if err := DecodeOrFail(rd, ctrl, val); err != nil {
+		return -1, err
+	}
+
+	stat, err := f.fs.Stat(val.Name)
+	if err != nil {
+		ctrl.Error(model.ControllerError{
+			ID:     "fs-stat",
+			Reason: err.Error(),
+		})
+		return -1, err
+	}
+
+	if !stat.Mode().IsDir() {
+		ctrl.Value(SizeValue{
+			Size: stat.Size(),
+		})
+		return stat.Size(), nil
+	}
+
+	var size int64 = 0
+	err = afero.Walk(f.fs, val.Name, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		size += info.Size()
+
+		return nil
+	})
+	if err != nil {
+		ctrl.Error(model.ControllerError{
+			ID:     "fs-walk",
+			Reason: err.Error(),
+		})
+		return -1, err
+	}
+
+	ctrl.Value(SizeValue{
+		Size: size,
+	})
+
+	return size, nil
+
+}
+
 type VerifyValue struct {
 	Same bool `json:"bool"`
 }
