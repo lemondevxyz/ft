@@ -3,8 +3,8 @@ package controller
 import (
 	"bytes"
 	"encoding/json"
+	//	"fmt"
 	"io/fs"
-	"os"
 	"testing"
 
 	"github.com/gin-contrib/sse"
@@ -12,49 +12,40 @@ import (
 	"github.com/spf13/afero"
 )
 
-func initFS() (afero.Fs, error) {
+func initFS(t *testing.T) afero.Fs {
 	afs := afero.NewMemMapFs()
 
-	err := afs.MkdirAll("src/content/", 0755)
+	err := afero.WriteFile(afs, "src/ok.txt", []byte("hello"), 0755)
 	if err != nil {
-		return nil, err
+		t.Fatalf("afs.WriteFile: %s", err.Error())
 	}
 
-	fi, err := afs.OpenFile("src/ok.txt", os.O_CREATE|os.O_WRONLY, 0755)
+	err = afero.WriteFile(afs, "src/content/ok.txt", []byte("hello part 2"), 0755)
 	if err != nil {
-		return nil, err
-	}
-	fi.WriteString("hello")
-	fi.Close()
-
-	fi, err = afs.OpenFile("src/content/ok.txt", os.O_CREATE|os.O_WRONLY, 0755)
-	if err != nil {
-		return nil, err
+		t.Fatalf("afs.WriteFile: %s", err.Error())
 	}
 
-	fi.WriteString("hello part 2")
-	fi.Close()
-
-	fi, err = afs.OpenFile("src/content/ok2.txt", os.O_CREATE|os.O_WRONLY, 0755)
+	err = afero.WriteFile(afs, "src/content/ok2.txt", []byte("hello world"), 0755)
 	if err != nil {
-		return nil, err
+		t.Fatalf("afs.WriteFile: %s", err.Error())
 	}
-	fi.WriteString("Hello part 3")
-	fi.Close()
 
-	fi, err = afs.OpenFile("new.txt", os.O_CREATE|os.O_WRONLY, 0755)
+	err = afero.WriteFile(afs, "src/content/dir/file.txt", []byte("hello world"), 0755)
 	if err != nil {
-		return nil, err
+		t.Fatalf("afs.WriteFile: %s", err.Error())
 	}
-	fi.WriteString("extra file")
-	fi.Close()
+
+	err = afero.WriteFile(afs, "new.txt", []byte("new txt"), 0755)
+	if err != nil {
+		t.Fatalf("afero.WriteFile: %s", err.Error())
+	}
 
 	err = afs.MkdirAll("dst", 0755)
 	if err != nil {
-		return nil, err
+		t.Fatalf("afero.MkdirAll: %s", err.Error())
 	}
 
-	return afs, nil
+	return afs
 }
 
 func encodeJSON(val interface{}) *bytes.Buffer {
@@ -171,10 +162,7 @@ func TestOperationControllerGetOperation(t *testing.T) {
 }
 
 func TestOperationControllerNewOperation(t *testing.T) {
-	afs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
+	afs := initFS(t)
 
 	channel := &Channel{}
 
@@ -200,15 +188,26 @@ func TestOperationControllerNewOperation(t *testing.T) {
 	}()
 
 	ctrl := &model.DummyController{}
-
-	t.Log("new op")
-	_, err = oc.NewOperation(encodeJSON(OperationNewData{
+	newOpRes, err := oc.NewOperation(encodeJSON(OperationNewData{
 		WriterID: id,
 		Src:      []string{"src"},
 		Dst:      "dst",
 	}), ctrl)
 	if err != nil {
 		t.Fatalf("couldn't start operation: %s", err.Error())
+	}
+
+	op, err := oc.GetOperationOrFail(ctrl, newOpRes.ID)
+	if err != nil {
+		t.Fatalf("GetOperationOrFail: %s", err.Error())
+	}
+
+	srcs := op.Sources()
+	for _, v := range srcs {
+		_, err := v.Fs.Stat(v.Path)
+		if err != nil {
+			t.Fatalf("afero.Stat: %s", err.Error())
+		}
 	}
 
 	t.Log("waiting 4 event")
@@ -219,10 +218,7 @@ func TestOperationControllerNewOperation(t *testing.T) {
 }
 
 func TestOperationControllerStatus(t *testing.T) {
-	afs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
+	afs := initFS(t)
 
 	channel := &Channel{}
 
@@ -317,10 +313,7 @@ func TestOperationControllerStatus(t *testing.T) {
 
 // DEPRECATED
 func TestOperationControllerGeneric(t *testing.T) {
-	afs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
+	afs := initFS(t)
 
 	channel := &Channel{}
 
@@ -413,12 +406,8 @@ func TestOperationControllerGeneric(t *testing.T) {
 
 }
 
-func TestOperationControllerSetIndex(t *testing.T) {
-	afs, err := initFS()
-	if err != nil {
-		t.Fatalf("initFS: %s", err.Error())
-	}
-
+func TestOperationControllerSetSources(t *testing.T) {
+	afs := initFS(t)
 	channel := &Channel{}
 
 	oc, err := NewOperationController(channel, afs)
@@ -433,14 +422,18 @@ func TestOperationControllerSetIndex(t *testing.T) {
 	open := true
 	started := false
 
-	go func() {
+	go func(t *testing.T) {
 		for open {
 			started = true
-			<-ch
+
+			ev := <-ch
+			_ = ev
+
+			open = false
 		}
 
 		close(closed)
-	}()
+	}(t)
 
 	for !started {
 	}
@@ -459,6 +452,103 @@ func TestOperationControllerSetIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOperationOrFail: %s", err.Error())
 	}
+
+	/*
+		err = oc.Start(encodeJSON(OperationGenericData{
+			ID: res.ID,
+		}), dummy)
+		if err != nil {
+			t.Fatalf("oc.Start: %v", err.Error())
+		}
+	*/
+
+	err = oc.SetSources(encodeJSON(OperationSetSourcesData{
+		ID:   res.ID,
+		Srcs: []string{},
+	}), dummy)
+	if err == nil {
+		t.Fatalf("oc.SetSources shouldn't return nil, instead it should return an error saying that srcs cannot be empty")
+	}
+
+	err = oc.SetSources(encodeJSON(OperationSetSourcesData{
+		ID:   res.ID,
+		Srcs: []string{"empty lamo adsfasdf"},
+	}), dummy)
+	if err == nil {
+		t.Fatalf("oc.SetSources shouldn't return nil, instead it should return an error saying that one of the files doesn't exist")
+	}
+
+	err = oc.SetSources(encodeJSON(OperationSetSourcesData{
+		ID:   res.ID,
+		Srcs: []string{"new.txt"},
+	}), dummy)
+	if err != nil {
+		t.Fatalf("oc.SetSources: %s", err.Error())
+	}
+
+	srcs := op.Sources()
+	if srcs[0].Path != "new.txt" {
+		t.Fatalf("sources do not match wanted result")
+	}
+
+	<-closed
+}
+
+func TestOperationControllerSetIndex(t *testing.T) {
+	afs := initFS(t)
+	channel := &Channel{}
+
+	oc, err := NewOperationController(channel, afs)
+	if err != nil {
+		t.Fatalf("NewOperationController: %s", err.Error())
+	}
+
+	closed := make(chan struct{})
+
+	id, ch := channel.Subscribe()
+
+	open := true
+	started := false
+
+	go func(t *testing.T) {
+		for open {
+			started = true
+
+			ev := <-ch
+			_ = ev
+
+			open = false
+		}
+
+		close(closed)
+	}(t)
+
+	for !started {
+	}
+
+	dummy := &model.DummyController{}
+	res, err := oc.NewOperation(encodeJSON(OperationNewData{
+		WriterID: id,
+		Src:      []string{"src", "new.txt"},
+		Dst:      "dst",
+	}), dummy)
+	if err != nil {
+		t.Fatalf("NewOperation: %s", err.Error())
+	}
+
+	op, err := oc.GetOperationOrFail(dummy, res.ID)
+	if err != nil {
+		t.Fatalf("GetOperationOrFail: %s", err.Error())
+	}
+
+	/*
+		err = oc.Start(encodeJSON(OperationGenericData{
+			ID: res.ID,
+		}), dummy)
+		if err != nil {
+			t.Fatalf("oc.Start: %v", err.Error())
+		}
+	*/
 
 	err = oc.SetIndex(encodeJSON(OperationSetIndexValue{
 		ID:    res.ID,
@@ -479,4 +569,6 @@ func TestOperationControllerSetIndex(t *testing.T) {
 	if op.Index() != 2 {
 		t.Fatalf("controller.SetIndex doesn't work: want: 2, have: %d", op.Index())
 	}
+
+	<-closed
 }

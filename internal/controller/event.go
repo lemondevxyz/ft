@@ -94,7 +94,7 @@ func EventOperationError(id string, dst string, err model.OperationError) sse.Ev
 			Dst   string `json:"dst"`
 			Error string `json:"error"`
 			Index int    `json:"index"`
-		}{id, err.Src.File.Name(), dst, errstr, err.Index},
+		}{id, err.Src.AbsPath, dst, errstr, err.Index},
 	}
 }
 

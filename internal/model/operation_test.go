@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amoghe/distillog"
 	"github.com/spf13/afero"
 )
 
@@ -51,12 +50,13 @@ func TestDirToCollection(t *testing.T) {
 	writeFile("dir1/dir2/file2.txt")
 	writeFile("dir1/dir2/file3.txt")
 
-	collect, err := DirToCollection(fs, "dir1/dir2")
+	collect, err := DirToCollection(fs, "dir1")
 	if err != nil {
 		t.Fatalf("DirToCollection: %s", err.Error())
 	}
 
 	for _, v := range collect {
+		t.Log(v.Fs)
 		_, err := v.Fs.Stat(v.Path)
 		if err != nil {
 			t.Fatalf("v.Fs.Stat: %s", err.Error())
@@ -266,7 +266,7 @@ func TestOperationProceed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
-	op.SetLogger(distillog.NewStdoutLogger(""))
+	//op.SetLogger(distillog.NewStdoutLogger(""))
 	op.Start()
 
 	i := 0
@@ -276,7 +276,6 @@ func TestOperationProceed(t *testing.T) {
 		if err.Error == ErrDstAlreadyExists {
 			dst.Remove("content/level1.txt")
 			op.Proceed()
-			t.Log("hya")
 		}
 
 		t.Log(op.Sources()[i])
@@ -301,10 +300,6 @@ func TestOperationSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOperation: %s", err.Error())
 	}
-
-	//stream := &bufferCloser{&bytes.Buffer{}}
-	//log := distillog.NewStreamLogger("null", stream)
-	//scan := bufio.NewScanner(stream)
 
 	op.Start()
 	runs := 0

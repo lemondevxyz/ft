@@ -239,7 +239,7 @@ func (oc *OperationController) AddOperation(op *model.Operation, dst, owner stri
 		return "", err
 	}
 
-	id := randstr.String(16)
+	id := randstr.String(5)
 
 	oc.operationsMtx.Lock()
 	oc.operations[id] = &Operation{&model.PublicOperation{Operation: op, Destination: dst}, id, sync.Mutex{}}
@@ -258,16 +258,9 @@ type OperationNewResult struct {
 	ID string `json:"id"`
 }
 
-// NewOperations reads from the reader and writes the response
-// to the controller.
-func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller) (*OperationNewResult, error) {
-	strct := &OperationNewData{}
-	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return nil, err
-	}
-
-	collection := model.Collection{}
-	for _, src := range strct.Src {
+func (oc *OperationController) ConvertPathsToFilesOrFail(ctrl model.Controller, srcs []string) (model.Collection, error) {
+	collect := model.Collection{}
+	for _, src := range srcs {
 		fi, err := StatOrFail(ctrl, oc.fs, src)
 		if err != nil {
 			return nil, err
@@ -284,14 +277,32 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 				return nil, err
 			}
 
-			collection = append(collection, files...)
+			collect = append(collect, files...)
 		} else {
-			fi.Fs = afero.NewBasePathFs(oc.fs, path.Dir(fi.Path))
+			if path.Dir(fi.Path) != "." {
+				fi.Fs = afero.NewBasePathFs(oc.fs, path.Dir(fi.Path))
+			}
 			fi.AbsPath = fi.Path
 			fi.Path = path.Base(fi.Path)
 
-			collection = append(collection, *fi)
+			collect = append(collect, *fi)
 		}
+	}
+
+	return collect, nil
+}
+
+// NewOperations reads from the reader and writes the response
+// to the controller.
+func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller) (*OperationNewResult, error) {
+	strct := &OperationNewData{}
+	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
+		return nil, err
+	}
+
+	collection, err := oc.ConvertPathsToFilesOrFail(ctrl, strct.Src)
+	if err != nil {
+		return nil, err
 	}
 
 	if _, err := StatOrFail(ctrl, oc.fs, strct.Dst); err != nil {
@@ -392,18 +403,33 @@ func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) e
 		return err
 	}
 
-	collect := model.Collection{}
-	for _, src := range strct.Srcs {
-		fi, err := StatOrFail(ctrl, oc.fs, src)
-		if err != nil {
-			return err
-		}
+	if len(strct.Srcs) == 0 {
+		err := fmt.Errorf("filepaths cannot be empty")
+		ctrl.Error(model.ControllerError{
+			ID:     "controller/empty-src",
+			Reason: err.Error(),
+		})
 
-		collect = append(collect, *fi)
+		return err
+	}
+
+	collect, err := oc.ConvertPathsToFilesOrFail(ctrl, strct.Srcs)
+	if err != nil {
+		return err
 	}
 
 	val, err := oc.GetOperationOrFail(ctrl, strct.ID)
 	if err != nil {
+		return err
+	}
+
+	if len(collect) == 0 {
+		err := fmt.Errorf("collection cannot be empty")
+
+		ctrl.Error(model.ControllerError{
+			ID:     "controller/empty-collection",
+			Reason: err.Error(),
+		})
 		return err
 	}
 

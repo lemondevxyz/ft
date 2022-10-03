@@ -138,11 +138,11 @@ func DirToCollection(fs afero.Fs, base string) (Collection, error) {
 		return nil, err
 	}
 
-	baseFs := afero.NewBasePathFs(fs, path.Dir(base))
+	baseFs := afero.NewBasePathFs(fs, base)
 	for i := range collect {
 		collect[i].Fs = baseFs
 		collect[i].AbsPath = path.Join(base, collect[i].Path)
-		collect[i].Path = path.Join(path.Base(base), collect[i].Path)
+		collect[i].Path = path.Join(path.Dir(base), collect[i].Path)
 		//collect[i].basePath = base
 	}
 
@@ -337,7 +337,9 @@ func (o *Operation) SetSources(c Collection) {
 // SetIndex sets the index for the collection. Can be used to skip a file
 // whilst it is being written to.
 func (o *Operation) SetIndex(n int) {
+	o.logger.Debugf("SetIndex: %d", n)
 	o.src.setIndex(n)
+	o.logger.Debugf("SetIndex: len: %d", len(o.src.getSlice()))
 }
 
 // do is the main loop for operation, it handles all file transfers
@@ -351,7 +353,9 @@ func (o *Operation) do() {
 			arr := o.src.getSlice()
 			index := o.src.getIndex()
 
+			o.logger.Debugf("do(): loop: %d, %d\n", index, len(arr))
 			if len(arr) <= index {
+				o.logger.Debugln("do(): breaking...")
 				break
 			}
 
@@ -390,6 +394,7 @@ func (o *Operation) do() {
 				o.errWg.Wait()
 				time.Sleep(opDelay)
 
+				o.logger.Debugln(o.src.getIndex(), index)
 				if o.src.getIndex() != index {
 					o.logger.Debugln("do(): continue because index has been updated")
 					continue
