@@ -1,14 +1,17 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
@@ -60,9 +63,10 @@ func (s *server) Start() error {
 		corsHandler := cors.New(cors.Config{
 			AllowAllOrigins:  true,
 			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "HEAD"},
-			AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization", "Accept"},
+			AllowHeaders:     []string{"If-None-Match", "Origin", "Content-Length", "Content-Type", "Authorization", "Accept", "ETag"},
 			AllowCredentials: false,
 			MaxAge:           12 * time.Hour,
+			ExposeHeaders:    []string{"ETag"},
 		})
 
 		router.Use(corsHandler)
@@ -172,7 +176,53 @@ func (s *server) Start() error {
 		fs.POST("/remove", func(c *gin.Context) { s.opFs.RemoveAll(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		fs.POST("/move", func(c *gin.Context) { s.opFs.Move(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		fs.POST("/mkdir", func(c *gin.Context) { s.opFs.MkdirAll(c.Request.Body, c.MustGet("req").(model.Controller)) })
-		fs.POST("/readdir", func(c *gin.Context) { s.opFs.ReadDir(c.Request.Body, c.MustGet("req").(model.Controller)) })
+		fs.POST("/readdir", func(c *gin.Context) {
+			body := bytes.Buffer{}
+
+			_, err := io.Copy(&body, c.Request.Body)
+			if err != nil {
+				c.JSON(200, model.ControllerError{
+					ID:     "io-copy",
+					Reason: err.Error(),
+				})
+				return
+			}
+
+			bodyCopy := bytes.NewBuffer(body.Bytes())
+
+			val := &controller.ReadDirData{}
+			dec := json.NewDecoder(&body)
+			if err := dec.Decode(val); err != nil {
+				c.JSON(400, model.ControllerError{
+					ID:     "json-decoder",
+					Reason: err.Error(),
+				})
+				return
+			}
+
+			stat, err := s.fs.Stat(val.Name)
+			if err != nil {
+				c.JSON(400, model.ControllerError{
+					ID:     "fs-stat",
+					Reason: err.Error(),
+				})
+				return
+			}
+
+			hsh := xxhash.New()
+			hsh.Write([]byte(stat.ModTime().String()))
+
+			sum := strconv.FormatUint(hsh.Sum64(), 16)
+
+			if string(sum) == c.GetHeader("If-None-Match") {
+				c.String(304, sum)
+				return
+			}
+
+			c.Header("ETag", sum)
+
+			s.opFs.ReadDir(bodyCopy, c.MustGet("req").(model.Controller))
+		})
 		fs.POST("/verify", func(c *gin.Context) { s.opFs.Verify(c.Request.Body, c.MustGet("req").(model.Controller)) })
 		fs.POST("/size", func(c *gin.Context) { s.opFs.Size(c.Request.Body, c.MustGet("req").(model.Controller)) })
 	}

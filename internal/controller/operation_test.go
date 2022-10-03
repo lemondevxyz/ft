@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"encoding/json"
+
 	//	"fmt"
 	"io/fs"
 	"testing"
@@ -507,17 +508,15 @@ func TestOperationControllerSetIndex(t *testing.T) {
 
 	id, ch := channel.Subscribe()
 
-	open := true
+	//open := true
 	started := false
 
 	go func(t *testing.T) {
-		for open {
+		for i := 0; i < 5; i++ {
 			started = true
 
 			ev := <-ch
 			_ = ev
-
-			open = false
 		}
 
 		close(closed)
@@ -550,6 +549,7 @@ func TestOperationControllerSetIndex(t *testing.T) {
 		}
 	*/
 
+	t.Log("asdf", op)
 	err = oc.SetIndex(encodeJSON(OperationSetIndexValue{
 		ID:    res.ID,
 		Index: 12,
@@ -558,6 +558,7 @@ func TestOperationControllerSetIndex(t *testing.T) {
 		t.Fatalf("oc.SetIndex shouldn't return nil, instead it should return an error saying that the index is bigger than expected")
 	}
 
+	t.Log("Asdf", op)
 	err = oc.SetIndex(encodeJSON(OperationSetIndexValue{
 		ID:    res.ID,
 		Index: 2,
@@ -566,9 +567,12 @@ func TestOperationControllerSetIndex(t *testing.T) {
 		t.Fatalf("oc.SetIndex: %s", err.Error())
 	}
 
+	t.Log("asd")
 	if op.Index() != 2 {
 		t.Fatalf("controller.SetIndex doesn't work: want: 2, have: %d", op.Index())
 	}
+	t.Log("asdfa")
 
+	t.Log("asdfsa")
 	<-closed
 }
