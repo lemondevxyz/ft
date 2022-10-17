@@ -439,7 +439,6 @@ func (o *Operation) do() {
 
 				srcReader, err := srcFile.Fs.Open(srcFile.Path)
 				if err != nil {
-					fmt.Println(srcFile.Fs, srcFile.AbsPath, srcFile.Path)
 					errOut(fmt.Errorf("%w: %s", ErrSrcFile, err.Error()))
 					continue
 				}
