@@ -307,6 +307,12 @@ func (o *Operation) Resume() error {
 // Proceed is used whenever an error is called. When an operation error
 // occurs, the operation gets stuck unless Proceed is called.
 func (o *Operation) Proceed() {
+	defer func() {
+		if recover() != nil {
+			o.errWg.Add(1)
+		}
+	}()
+
 	o.logger.Infoln("Proceeded with the error")
 	o.errWg.Done()
 }
