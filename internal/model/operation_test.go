@@ -34,7 +34,12 @@ func initFS(t *testing.T) afero.Fs {
 func TestDirToCollection(t *testing.T) {
 	fs := afero.NewMemMapFs()
 
-	err := fs.MkdirAll("dir1/dir2", 0755)
+	err := fs.MkdirAll("new/new2/new3", 0755)
+	if err != nil {
+		t.Fatalf("fs.MkdirAll: %s", err.Error())
+	}
+
+	err = fs.MkdirAll("dir1/dir2", 0755)
 	if err != nil {
 		t.Fatalf("fs.MkdirAll: %s", err.Error())
 	}
@@ -46,6 +51,7 @@ func TestDirToCollection(t *testing.T) {
 		}
 	}
 
+	writeFile("new/new2/new3/ok.txt")
 	writeFile("dir1/file1.txt")
 	writeFile("dir1/dir2/file2.txt")
 	writeFile("dir1/dir2/file3.txt")
@@ -62,6 +68,12 @@ func TestDirToCollection(t *testing.T) {
 			t.Fatalf("v.Fs.Stat: %s", err.Error())
 		}
 	}
+
+	collect, err = DirToCollection(fs, "new/new2/new3")
+	if collect[0].Path != "ok.txt" {
+		t.Fatalf(`DirToCollection doesn't output the correct path`)
+	}
+	t.Log(collect[0].Path, err)
 }
 
 func TestNewOperation(t *testing.T) {

@@ -142,7 +142,8 @@ func DirToCollection(fs afero.Fs, base string) (Collection, error) {
 	for i := range collect {
 		collect[i].Fs = baseFs
 		collect[i].AbsPath = path.Join(base, collect[i].Path)
-		collect[i].Path = path.Join(path.Dir(base), collect[i].Path)
+		//oldpath := collect[i].Path
+		//collect[i].Path = path.Join(path.Dir(base), collect[i].Path)
 		//collect[i].basePath = base
 	}
 
@@ -438,6 +439,7 @@ func (o *Operation) do() {
 
 				srcReader, err := srcFile.Fs.Open(srcFile.Path)
 				if err != nil {
+					fmt.Println(srcFile.Fs, srcFile.AbsPath, srcFile.Path)
 					errOut(fmt.Errorf("%w: %s", ErrSrcFile, err.Error()))
 					continue
 				}
