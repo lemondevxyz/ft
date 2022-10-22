@@ -71,8 +71,14 @@ func (s *server) Start() error {
 
 		router.Use(corsHandler)
 	}
-	router.StaticFS("/web", afero.NewHttpFs(s.fs))
-	router.GET("/sse", func(c *gin.Context) {
+
+	router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/client")
+	})
+
+	router.Static("/client", "./client")
+	router.StaticFS("/files", afero.NewHttpFs(s.fs))
+	router.GET("/api/v0/sse", func(c *gin.Context) {
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Connection", "keep-alive")
 		c.Header("Cache-Control", "no-cache")
@@ -117,24 +123,27 @@ func (s *server) Start() error {
 		s.channel.Unsubscribe(id)
 	})
 
+	shouldProtect := os.Getenv("FT_PROTECT_API")
 	protected := router.Group("/api/v0/", func(c *gin.Context) {
-		id := strings.ReplaceAll(c.GetHeader("Authorization"), "Bearer ", "")
-		if len(apikey) > 0 {
-			if id != apikey {
-				c.AbortWithStatusJSON(401, model.ControllerError{
-					ID:     "authorization",
-					Reason: "invalid id (api key)",
-				})
-				return
-			}
-		} else {
-			sub := s.channel.GetSubscriber(id)
-			if sub == nil {
-				c.AbortWithStatusJSON(401, model.ControllerError{
-					ID:     "authorization",
-					Reason: "invalid id",
-				})
-				return
+		if len(shouldProtect) > 0 {
+			id := strings.ReplaceAll(c.GetHeader("Authorization"), "Bearer ", "")
+			if len(apikey) > 0 {
+				if id != apikey {
+					c.AbortWithStatusJSON(401, model.ControllerError{
+						ID:     "authorization",
+						Reason: "invalid id (api key)",
+					})
+					return
+				}
+			} else {
+				sub := s.channel.GetSubscriber(id)
+				if sub == nil {
+					c.AbortWithStatusJSON(401, model.ControllerError{
+						ID:     "authorization",
+						Reason: "invalid id",
+					})
+					return
+				}
 			}
 		}
 
