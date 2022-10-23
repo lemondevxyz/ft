@@ -488,13 +488,16 @@ func (o *Operation) do() {
 						return srcReader.Read(p)
 					}
 				}))
+				dstWriter.Close()
+				srcReader.Close()
+				if err != nil {
+					srcFile.Fs.RemoveAll(srcFile.Path)
+				}
+
 				if err != nil && err != ErrSkipFile {
 					errOut(fmt.Errorf("io.Copy: %w", err))
 					continue
 				}
-
-				dstWriter.Close()
-				srcReader.Close()
 
 				o.logger.Infof("do(): done transfer: %d, %d, %s\n", index, len(arr), srcFile.File.Name())
 				o.errWg.Done()
