@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/amoghe/distillog"
+	"github.com/fujiwara/shapeio"
 	"github.com/spf13/afero"
 )
 
@@ -93,6 +94,9 @@ type Operation struct {
 	opProgress ProgressSetter
 	// logger
 	logger *logger
+	// rateLimit
+	rateLimitMtx sync.Mutex
+	rateLimit    float64
 }
 
 var (
@@ -188,6 +192,13 @@ func NewOperation(src Collection, dst afero.Fs) (*Operation, error) {
 	}
 
 	return op, nil
+}
+
+// SetRateLimit sets a rate limit for how fast can a reader be read.
+func (o *Operation) SetRateLimit(val float64) {
+	o.rateLimitMtx.Lock()
+	o.rateLimit = val
+	o.rateLimitMtx.Unlock()
 }
 
 // SetLogger sets the logger for the Operation
@@ -450,6 +461,7 @@ func (o *Operation) do() {
 				}
 
 				var size int64 = 0
+				reader := shapeio.NewReader(srcReader)
 				o.logger.Debugln("starting io.Copy")
 				_, err = io.Copy(progressWriter(func(p []byte) (int, error) {
 					n, err := dstWriter.Write(p)
@@ -485,7 +497,12 @@ func (o *Operation) do() {
 
 							time.Sleep(opDelay)
 						}
-						return srcReader.Read(p)
+
+						o.rateLimitMtx.Lock()
+						reader.SetRateLimit(o.rateLimit)
+						o.rateLimitMtx.Unlock()
+
+						return reader.Read(p)
 					}
 				}))
 				dstWriter.Close()

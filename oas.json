@@ -45,7 +45,7 @@
           }
         },
         "tags": [
-          "file system"
+          "file system routes"
         ],
         "summary": "Creates a new directory",
         "description": " Creates a new directory and its subdirectories if needed",
@@ -86,7 +86,7 @@
           }
         },
         "tags": [
-          "file system"
+          "file system routes"
         ],
         "summary": "Move a file or directory",
         "description": " Moves a file or directory into a new one, or renames the file",
@@ -127,7 +127,7 @@
           }
         },
         "tags": [
-          "file system"
+          "file system routes"
         ],
         "summary": "Reads a directory",
         "description": " Reads all the files in a directory and returns them.",
@@ -168,7 +168,7 @@
           }
         },
         "tags": [
-          "file system"
+          "file system routes"
         ],
         "summary": "Removes the file or directory and its sub-directories",
         "description": " Removes the file or directory and its sub-directories",
@@ -209,7 +209,7 @@
           }
         },
         "tags": [
-          "file system"
+          "file system routes"
         ],
         "summary": "Calculate the size of a directory",
         "description": " Reads all the files in a directory and adds them together then returns the sum.",
@@ -250,7 +250,7 @@
           }
         },
         "tags": [
-          "file system"
+          "file system routes"
         ],
         "summary": "Verify two files",
         "description": " Check if two files contain the same content or not. This function uses the xxhash algorithm and if there's a file with the extension \"xxh64\", it uses that instead of reading the file and computing the hash.",
@@ -291,7 +291,7 @@
           }
         },
         "tags": [
-          "op"
+          "operation routes"
         ],
         "summary": "Create a new operation",
         "description": " Create a new operation from scratch. Do note: New operations by default have the Default status.",
@@ -332,7 +332,7 @@
           }
         },
         "tags": [
-          "op"
+          "operation routes"
         ],
         "summary": "Proceed with the operation",
         "description": " This route should only be used once an operation has occurred an error. Basically, it tells the operation \"we've solved whatever caused the error, continue copying the files.\". This route should not be confused with a paused state as an error and a paused are completely different states.",
@@ -373,7 +373,7 @@
           }
         },
         "tags": [
-          "op"
+          "operation routes"
         ],
         "summary": "Sets the index for the operation",
         "description": " Sets the number of the operation file that should be copied. Do note, any calls to this route will cause the current file to be skipped even amidst writing it.",
@@ -382,6 +382,47 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/OperationSetIndexData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/op/set-rate-limit": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OperationRateLimitdata JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "operation routes"
+        ],
+        "summary": "Set the operation's rate limit",
+        "description": " This route allows the client to limit how fast an operation can run.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationRateLimitData"
               }
             }
           },
@@ -414,7 +455,7 @@
           }
         },
         "tags": [
-          "op"
+          "operation routes"
         ],
         "summary": "Set the operation's sources",
         "description": " This route allows the client to add new files to copy or remove old ones that haven't started copying. Do note: This doesn't add but instead *sets* the source array.",
@@ -455,7 +496,7 @@
           }
         },
         "tags": [
-          "op"
+          "operation routes"
         ],
         "summary": "Gets the size of the operation",
         "description": " Returns the size of the operation. Do note: this route is unnecessary and will be removed in future releases, because the operation's size is sent to the SSE route upon creation and operation updates.",
@@ -474,7 +515,6 @@
   },
   "components": {
     "schemas": {
-      "": {},
       "ControllerError": {
         "type": "object",
         "properties": {
@@ -535,6 +575,21 @@
           },
           "dst": {
             "type": "string"
+          }
+        }
+      },
+      "OperationRateLimitData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the operation",
+            "example": "51afb"
+          },
+          "speed": {
+            "type": "number",
+            "description": "bytes/second",
+            "example": 2.5
           }
         }
       },

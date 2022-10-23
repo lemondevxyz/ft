@@ -472,6 +472,36 @@ type OperationStatusData struct {
 }
 type OperationStatusValue OperationGenericValue
 
+type OperationRateLimitData struct {
+	ID    string  `json:"id" example:"51afb" description:"The ID of the operation"`
+	Speed float64 `json:"speed" example:"2.5" description:"bytes/second"`
+}
+
+// @Title Set the operation's rate limit
+// @Description This route allows the client to limit how fast an operation can run.
+// @Param   val body OperationRateLimitData true "The operation ID alongside the rate limit"
+// @Success 200 object OperaitonGenericData "OperationRateLimitdata JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource operation routes
+// @Route /api/v0/op/set-rate-limit [post]
+func (oc *OperationController) SetRateLimit(rd io.Reader, ctrl model.Controller) error {
+	strct := &OperationRateLimitData{}
+	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
+		return err
+	}
+
+	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
+	if err != nil {
+		return err
+	}
+
+	op.SetRateLimit(strct.Speed)
+
+	ctrl.Value(OperationGenericData{ID: strct.ID})
+
+	return nil
+}
+
 // Generic methods
 
 // @Title Update the Operation's status
