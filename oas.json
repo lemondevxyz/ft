@@ -1,0 +1,666 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "ft",
+    "description": "the API definition for ft, the remote file browser",
+    "contact": {
+      "name": "Ahmed Mazen",
+      "email": "lemon@lemondev.xyz"
+    },
+    "license": {
+      "name": "GPL V3",
+      "url": "https://www.gnu.org/licenses/gpl-3.0.en.html"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Default Server URL"
+    }
+  ],
+  "paths": {
+    "/api/v0/fs/mkdir": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "FsGenericData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "file system"
+        ],
+        "summary": "Creates a new directory",
+        "description": " Creates a new directory and its subdirectories if needed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsGenericData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/fs/move": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "FsGenericData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "file system"
+        ],
+        "summary": "Move a file or directory",
+        "description": " Moves a file or directory into a new one, or renames the file",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsGenericData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/fs/readdir": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "ReadDirValue JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadDirValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "file system"
+        ],
+        "summary": "Reads a directory",
+        "description": " Reads all the files in a directory and returns them.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsGenericData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/fs/remove": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "FsGenericData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "file system"
+        ],
+        "summary": "Removes the file or directory and its sub-directories",
+        "description": " Removes the file or directory and its sub-directories",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsGenericData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/fs/size": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "FsGenericData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "file system"
+        ],
+        "summary": "Calculate the size of a directory",
+        "description": " Reads all the files in a directory and adds them together then returns the sum.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FsGenericData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/fs/verify": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "MoveData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "file system"
+        ],
+        "summary": "Verify two files",
+        "description": " Check if two files contain the same content or not. This function uses the xxhash algorithm and if there's a file with the extension \"xxh64\", it uses that instead of reading the file and computing the hash.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/op/new": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OperationGenericData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "op"
+        ],
+        "summary": "Create a new operation",
+        "description": " Create a new operation from scratch. Do note: New operations by default have the Default status.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationNewData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/op/proceed": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OperationGenericData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "op"
+        ],
+        "summary": "Proceed with the operation",
+        "description": " This route should only be used once an operation has occurred an error. Basically, it tells the operation \"we've solved whatever caused the error, continue copying the files.\". This route should not be confused with a paused state as an error and a paused are completely different states.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationGenericData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/op/set-index": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OperationSetIndexData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationSetIndexData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "op"
+        ],
+        "summary": "Sets the index for the operation",
+        "description": " Sets the number of the operation file that should be copied. Do note, any calls to this route will cause the current file to be skipped even amidst writing it.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationSetIndexData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/op/set-sources": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OperationGenericData JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationGenericData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "op"
+        ],
+        "summary": "Set the operation's sources",
+        "description": " This route allows the client to add new files to copy or remove old ones that haven't started copying. Do note: This doesn't add but instead *sets* the source array.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationSetSourcesData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/api/v0/op/size": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "OperationSizeValue JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationSizeValue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "model.ControllerError JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ControllerError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "op"
+        ],
+        "summary": "Gets the size of the operation",
+        "description": " Returns the size of the operation. Do note: this route is unnecessary and will be removed in future releases, because the operation's size is sent to the SSE route upon creation and operation updates.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationGenericData"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "": {},
+      "ControllerError": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "FsGenericData": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "A path to a file or a directory",
+            "example": "/home/tim/file.txt"
+          }
+        }
+      },
+      "MoveData": {
+        "type": "object",
+        "properties": {
+          "src": {
+            "type": "string",
+            "description": "The source file you want to rename or move",
+            "example": "/home/tim/src-file.txt"
+          },
+          "dst": {
+            "type": "string",
+            "description": "The destination you want to move the src file to",
+            "example": "/home/tim/dst-file.txt"
+          }
+        }
+      },
+      "OperationGenericData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the operation",
+            "example": "51afb"
+          }
+        }
+      },
+      "OperationNewData": {
+        "type": "object",
+        "properties": {
+          "writer_id": {
+            "type": "string"
+          },
+          "src": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dst": {
+            "type": "string"
+          }
+        }
+      },
+      "OperationSetIndexData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the operation",
+            "example": "51afb"
+          },
+          "index": {
+            "type": "integer",
+            "description": "The index you want to set",
+            "example": 1
+          }
+        }
+      },
+      "OperationSetSourcesData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the operation",
+            "example": "51afb"
+          },
+          "srcs example:": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OperationSizeValue": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "description": "The size of the operation in bytes",
+            "example": 1024
+          }
+        }
+      },
+      "OperationStatusData": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The ID of the operation",
+            "example": "51afb"
+          },
+          "status": {
+            "type": "integer",
+            "example": 1
+          }
+        }
+      },
+      "OsFileInfo": {
+        "type": "object",
+        "properties": {
+          "Path": {
+            "type": "string"
+          },
+          "AbsolutePath": {
+            "type": "string"
+          },
+          "FakeMode": {
+            "$ref": "#/components/schemas/"
+          }
+        }
+      },
+      "ReadDirValue": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "description": "An array of model.OsFileInfo",
+            "items": {
+              "type": "object",
+              "properties": {
+                "Path": {
+                  "type": "string"
+                },
+                "AbsolutePath": {
+                  "type": "string"
+                },
+                "FakeMode": {
+                  "$ref": "#/components/schemas/"
+                }
+              }
+            },
+            "example": [
+              {
+                "absPath": "/home",
+                "modTime": "2021-10-24T05:30:08.691024236+08:00",
+                "mode": 2147484141,
+                "name": "home",
+                "path": "/home",
+                "size": 4096
+              }
+            ]
+          }
+        }
+      },
+      "VerifyValue": {
+        "type": "object",
+        "properties": {
+          "same": {
+            "type": "boolean",
+            "description": "If same is true, the two files are identical. You probably won't use this because the request returns an error if they files are not identical",
+            "example": false
+          }
+        }
+      },
+      "model.ControllerError": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

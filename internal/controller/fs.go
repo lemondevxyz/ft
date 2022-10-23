@@ -30,13 +30,21 @@ func NewFsController(ch *Channel, f afero.Fs) (*FsController, error) {
 	}, nil
 }
 
+// FsGenericData represents the model for most fs operations
 type FsGenericData struct {
-	Name string `json:"name"`
+	Name string `json:"name" example:"/home/tim/file.txt" description:"A path to a file or a directory"`
 }
 
 type RemoveAllData FsGenericData
 type RemoveAllValue FsGenericData
 
+// @Title Removes the file or directory and its sub-directories
+// @Description Removes the file or directory and its sub-directories
+// @Param   removeAllData body FsGenericData true "The directory's path"
+// @Success 200 object FsGenericData         "FsGenericData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource file system routes
+// @Route /api/v0/fs/remove [post]
 func (f *FsController) RemoveAll(rd io.Reader, ctrl model.Controller) error {
 	r := &RemoveAllData{}
 	if err := DecodeOrFail(rd, ctrl, r); err != nil {
@@ -61,6 +69,13 @@ func (f *FsController) RemoveAll(rd io.Reader, ctrl model.Controller) error {
 type MkdirAllData FsGenericData
 type MkdirAllValue FsGenericData
 
+// @Title Creates a new directory
+// @Description Creates a new directory and its subdirectories if needed
+// @Param   mkdirAllData body FsGenericData true "The directory's path"
+// @Success 200 object FsGenericData         "FsGenericData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource file system routes
+// @Route /api/v0/fs/mkdir [post]
 func (f *FsController) MkdirAll(rd io.Reader, ctrl model.Controller) error {
 	r := &MkdirAllData{}
 	if err := DecodeOrFail(rd, ctrl, r); err != nil {
@@ -83,12 +98,19 @@ func (f *FsController) MkdirAll(rd io.Reader, ctrl model.Controller) error {
 }
 
 type MoveData struct {
-	Src string `json:"src"`
-	Dst string `json:"dst"`
+	Src string `json:"src" example:"/home/tim/src-file.txt" description:"The source file you want to rename or move"`
+	Dst string `json:"dst" example:"/home/tim/dst-file.txt" description:"The destination you want to move the src file to"`
 }
 
 type MoveValue MoveData
 
+// @Title Move a file or directory
+// @Description Moves a file or directory into a new one, or renames the file
+// @Param   moveData body FsGenericData true      "The source and destination in the form of MoveData"
+// @Success 200 object FsGenericData             "FsGenericData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource file system routes
+// @Route /api/v0/fs/move [post]
 func (f *FsController) Move(rd io.Reader, ctrl model.Controller) error {
 	r := &MoveData{}
 	if err := DecodeOrFail(rd, ctrl, r); err != nil {
@@ -112,9 +134,16 @@ func (f *FsController) Move(rd io.Reader, ctrl model.Controller) error {
 
 type ReadDirData FsGenericData
 type ReadDirValue struct {
-	Files []model.OsFileInfo `json:"files"`
+	Files []model.OsFileInfo `json:"files" example:"[{\"absPath\":\"/home\",\"modTime\":\"2021-10-24T05:30:08.691024236+08:00\",\"mode\":2147484141,\"name\":\"home\",\"path\":\"/home\",\"size\":4096}]" description:"An array of model.OsFileInfo"`
 }
 
+// @Title Reads a directory
+// @Description Reads all the files in a directory and returns them.
+// @Param   readDirData body FsGenericData     true "The path of the file"
+// @Success 200 object ReadDirValue          "ReadDirValue JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource file system routes
+// @Route /api/v0/fs/readdir [post]
 func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirValue, error) {
 	r := &ReadDirData{}
 	if err := DecodeOrFail(rd, ctrl, r); err != nil {
@@ -164,9 +193,16 @@ func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirVal
 
 type SizeData FsGenericData
 type SizeValue struct {
-	Size int64 `json:"size"`
+	Size int64 `json:"size" example:"1024" description:"Size in bytes"`
 }
 
+// @Title Calculate the size of a directory
+// @Description Reads all the files in a directory and adds them together then returns the sum.
+// @Param   sizeData   body FsGenericData true    "The path of the file"
+// @Success 200 object FsGenericData              "FsGenericData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource file system routes
+// @Route /api/v0/fs/size [post]
 func (f *FsController) Size(rd io.Reader, ctrl model.Controller) (int64, error) {
 	val := &SizeData{}
 	if err := DecodeOrFail(rd, ctrl, val); err != nil {
@@ -216,9 +252,16 @@ func (f *FsController) Size(rd io.Reader, ctrl model.Controller) (int64, error) 
 }
 
 type VerifyValue struct {
-	Same bool `json:"bool"`
+	Same bool `json:"same" example:"false" description:"If same is true, the two files are identical. You probably won't use this because the request returns an error if they files are not identical"`
 }
 
+// @Title Verify two files
+// @Description Check if two files contain the same content or not. This function uses the xxhash algorithm and if there's a file with the extension "xxh64", it uses that instead of reading the file and computing the hash.
+// @Param   moveData   body MoveData true    "The two files in the structure of MoveData"
+// @Success 200 object VerifyValue           "MoveData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource file system routes
+// @Route /api/v0/fs/verify [post]
 func (f *FsController) Verify(rd io.Reader, ctrl model.Controller) error {
 	val := &MoveData{}
 	if err := DecodeOrFail(rd, ctrl, val); err != nil {

@@ -254,9 +254,7 @@ type OperationNewData struct {
 	Dst      string   `json:"dst"`
 }
 
-type OperationNewResult struct {
-	ID string `json:"id"`
-}
+type OperationNewValue OperationGenericValue
 
 func (oc *OperationController) ConvertPathsToFilesOrFail(ctrl model.Controller, srcs []string) (model.Collection, error) {
 	collect := model.Collection{}
@@ -294,6 +292,14 @@ func (oc *OperationController) ConvertPathsToFilesOrFail(ctrl model.Controller, 
 
 // NewOperations reads from the reader and writes the response
 // to the controller.
+//
+// @Title Create a new operation
+// @Description Create a new operation from scratch. Do note: New operations by default have the Default status.
+// @Param   val body OperationNewData true "The operation ID alongside the list of files to copy, the destination and the ID given by the SSE route."
+// @Success 200 object OperationGenericData "OperationGenericData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource operation routes
+// @Route /api/v0/op/new [post]
 func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller) (*OperationNewResult, error) {
 	strct := &OperationNewData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -355,7 +361,7 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 		}
 	}(o)
 
-	res := OperationNewResult{id}
+	res := OperationNewValue{id}
 	ctrl.Value(res)
 
 	return &res, nil
@@ -390,13 +396,21 @@ func (oc *OperationController) GetOperationOrFail(ctrl model.Controller, id stri
 }
 
 type OperationSetSourcesData struct {
-	ID   string   `json:"id"`
-	Srcs []string `json:"srcs"`
+	ID   string   `json:"id" example:"51afb" description:"The ID of the operation"`
+	Srcs []string `json:"srcs example:"[\"/home/tim/src-file.txt\", \"/home/tim/src-dir/\"]" description:"The array of file paths"`
 }
 
 type OperationSetSourcesValue OperationSetSourcesData
 
 // Add adds extra sources to the operation
+
+// @Title Set the operation's sources
+// @Description This route allows the client to add new files to copy or remove old ones that haven't started copying. Do note: This doesn't add but instead *sets* the source array.
+// @Param   val body OperationSetSourcesData true "The operation ID alongside the list of new files"
+// @Success 200 object OperationGenericData "OperationGenericData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource operation routes
+// @Route /api/v0/op/set-sources [post]
 func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationSetSourcesData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -442,18 +456,31 @@ func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) e
 }
 
 type OperationGenericData struct {
-	ID string `json:"id"`
+	ID string `json:"id" example:"51afb" description:"The ID of the operation"`
 }
 type OperationGenericValue OperationGenericData
 
 type OperationStatusData struct {
-	ID     string `json:"id"`
-	Status uint8  `json:"status"`
+	ID     string `json:"id" example:"51afb" description:"The ID of the operation"`
+	Status uint8  `json:"status" example:"1" description:"The new Status of the operation.
+
+0 = Default
+1 = Started (use this if you want to start a new operation, or resume a paused one)
+2 = Finished (you cannot set an operation to finished)
+3 = Aborted (to exit out of an operation)
+4 = Paused (to pause an operation)"`
 }
 type OperationStatusValue OperationGenericValue
 
 // Generic methods
 
+// @Title Update the Operation's status
+// @Description This route allows the client to Start, Pause, Resume or Exit an operation.
+// @Param   val body OperationStatusData true "The operation ID alongside the new status value"
+// @Success 200 object OperationGenericData "OperationGenericData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource operation routes
+// @Route /api/v0/op/proceed [post]
 func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationStatusData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -508,7 +535,7 @@ func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error
 
 	go oc.channel.Announce(EventOperationUpdate(op))
 
-	ctrl.Value(OperationStatusValue{
+	ctrl.Value(OperationGenericValue{
 		ID: strct.ID,
 	})
 
@@ -595,6 +622,13 @@ func (oc *OperationController) Exit(rd io.Reader, ctrl model.Controller) error {
 	return nil
 }
 
+// @Title Proceed with the operation
+// @Description This route should only be used once an operation has occurred an error. Basically, it tells the operation "we've solved whatever caused the error, continue copying the files.". This route should not be confused with a paused state as an error and a paused are completely different states.
+// @Param   val body OperationGenericData true "The operation ID"
+// @Success 200 object OperationGenericData   "OperationGenericData JSON"
+// @Failure 400 object model.ControllerError   "model.ControllerError JSON"
+// @Resource operation routes
+// @Route /api/v0/op/proceed [post]
 func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -615,9 +649,16 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 
 // DEPRECATED
 type OperationSizeValue struct {
-	Size int64 `json:"size"`
+	Size int64 `json:"size" example:"1024" description:"The size of the operation in bytes"`
 }
 
+// @Title Gets the size of the operation
+// @Description Returns the size of the operation. Do note: this route is unnecessary and will be removed in future releases, because the operation's size is sent to the SSE route upon creation and operation updates.
+// @Param   val body OperationGenericData true "The operation ID"
+// @Success 200 object OperationSizeValue    "OperationSizeValue JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource operation routes
+// @Route /api/v0/op/size [post]
 func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*OperationSizeValue, error) {
 	strct := &OperationGenericData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
@@ -636,11 +677,18 @@ func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*Opera
 }
 
 type OperationSetIndexData struct {
-	ID    string `json:"id"`
-	Index int    `json:"index"`
+	ID    string `json:"id" example:"51afb" description:"The ID of the operation"`
+	Index int    `json:"index" example:"1" description:"The index you want to set"`
 }
 type OperationSetIndexValue OperationSetIndexData
 
+// @Title Sets the index for the operation
+// @Description Sets the number of the operation file that should be copied. Do note, any calls to this route will cause the current file to be skipped even amidst writing it.
+// @Param   val body OperationSetIndexData true "The operation ID and new index"
+// @Success 200 object OperationSetIndexData "OperationSetIndexData JSON"
+// @Failure 400 object model.ControllerError "model.ControllerError JSON"
+// @Resource operation routes
+// @Route /api/v0/op/set-index [post]
 func (oc *OperationController) SetIndex(rd io.Reader, ctrl model.Controller) error {
 	strct := &OperationSetIndexData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {

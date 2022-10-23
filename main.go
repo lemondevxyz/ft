@@ -9,6 +9,15 @@ import (
 	"github.com/spf13/afero"
 )
 
+// @Version 0.1.0
+// @Title ft
+// @Description the API definition for ft, the remote file browser
+// @ContactName Ahmed Mazen
+// @ContactEmail lemon@lemondev.xyz
+// @ContactURL https://lemondev.xyz
+// @LicenseName GPL V3
+// @LicenseURL https://www.gnu.org/licenses/gpl-3.0.en.html
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Please provider a directory to use")
