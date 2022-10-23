@@ -300,7 +300,7 @@ func (oc *OperationController) ConvertPathsToFilesOrFail(ctrl model.Controller, 
 // @Failure 400 object model.ControllerError "model.ControllerError JSON"
 // @Resource operation routes
 // @Route /api/v0/op/new [post]
-func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller) (*OperationNewResult, error) {
+func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller) (*OperationNewValue, error) {
 	strct := &OperationNewData{}
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return nil, err

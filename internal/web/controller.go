@@ -145,6 +145,8 @@ func (s *server) Start() error {
 					return
 				}
 			}
+
+			c.Set("id", id)
 		}
 
 		c.Header("Content-Type", "application/json")
@@ -158,7 +160,6 @@ func (s *server) Start() error {
 			return
 		}
 
-		c.Set("id", id)
 		c.Set("req", &request{c})
 	})
 
