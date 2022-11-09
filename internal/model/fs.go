@@ -38,7 +38,7 @@ func (o OsFileInfo) Map() map[string]interface{} {
 		"absPath": o.AbsolutePath,
 	}
 	if o.FakeMode != nil {
-		m["mode"] = o.FakeMode
+		m["mode"] = *o.FakeMode
 	}
 
 	return m

@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-var opDelay = time.Millisecond * 100
+const opPauseDelay = time.Millisecond
 
 // ProgressSetter is an interface that allows for progress setting for
 // files. Whenever a file gets written to in *Operation, ProgressSetter's
@@ -33,10 +33,6 @@ type ProgressSetter interface {
 type progressWriter func(p []byte) (n int, err error)
 
 func (pw progressWriter) Write(p []byte) (n int, err error) { return pw(p) }
-
-type readerFunc func(p []byte) (n int, err error)
-
-func (rf readerFunc) Read(p []byte) (n int, err error) { return rf(p) }
 
 type FileInfo struct {
 	Fs      afero.Fs
@@ -84,10 +80,9 @@ type Operation struct {
 	once   sync.Once
 	err    chan OperationError
 	errWg  sync.WaitGroup
-	exit   chan struct{}
 	// src fields
 	// srcMtx is used whenever src or srcIndex is going to be modified
-	src sorcerer
+	src *sorcerer
 	// the destination
 	dst afero.Fs
 	// progress fields
@@ -142,13 +137,17 @@ func DirToCollection(fs afero.Fs, base string) (Collection, error) {
 		return nil, err
 	}
 
-	baseFs := afero.NewBasePathFs(fs, base)
+	var baseFs afero.Fs
+	if path.Dir(base) == "." {
+		baseFs = fs
+	} else {
+		baseFs = afero.NewBasePathFs(fs, path.Dir(base))
+	}
+
 	for i := range collect {
 		collect[i].Fs = baseFs
 		collect[i].AbsPath = path.Join(base, collect[i].Path)
-		//oldpath := collect[i].Path
-		//collect[i].Path = path.Join(path.Dir(base), collect[i].Path)
-		//collect[i].basePath = base
+		collect[i].Path = path.Join(path.Base(base), collect[i].Path)
 	}
 
 	return collect, nil
@@ -172,14 +171,14 @@ const (
 // NewOperation returns an operation object.
 func NewOperation(src Collection, dst afero.Fs) (*Operation, error) {
 	op := &Operation{
-		err:  make(chan OperationError),
-		exit: make(chan struct{}),
-		dst:  dst,
-		src: sorcerer{
+		err: make(chan OperationError),
+		dst: dst,
+		src: &sorcerer{
 			index: -1,
 			slice: src,
 		},
-		logger: &logger{log: distillog.NewNullLogger("")}}
+		logger: &logger{log: distillog.NewNullLogger("")},
+	}
 
 	if len(src) == 0 {
 		return nil, fmt.Errorf("src cannot be empty")
@@ -203,9 +202,7 @@ func (o *Operation) SetRateLimit(val float64) {
 
 // SetLogger sets the logger for the Operation
 func (o *Operation) SetLogger(l distillog.Logger) {
-	o.logger.lock()
-	o.logger.log = l
-	o.logger.unlock()
+	o.logger.setLogger(l)
 }
 
 // SetProgress sets the progress setter for the files.
@@ -230,18 +227,13 @@ func (o *Operation) Destination() afero.Fs {
 
 // Start starts the operation
 func (o *Operation) Start() error {
-	o.mtx.RLock()
-	if o.status != Default {
-		o.mtx.RUnlock()
+	if o.Status() != Default {
 		return fmt.Errorf("cannot start an operation that has either already started, is resumed, has finished, or has been aborted")
 	}
-	o.mtx.RUnlock()
 
 	o.logger.Infoln("Started the operation")
-	o.mtx.Lock()
-	o.status = Started
-	o.mtx.Unlock()
-	go o.do()
+	o.setStatus(Started)
+	go o.once.Do(o.do)
 
 	return nil
 }
@@ -252,36 +244,26 @@ func (o *Operation) Start() error {
 //
 // Exit makes an operation obsolete.
 func (o *Operation) Exit() error {
-	o.mtx.RLock()
-	if o.status != Started && o.status != Paused {
-		o.mtx.RUnlock()
+	status := o.Status()
+	if status != Started && status != Paused {
 		return fmt.Errorf("cannot exit out of an operation that has finished, hasn't started, or has been aborted")
 	}
-	o.mtx.RUnlock()
 
 	o.logger.Infoln("Aborted the operation")
-	o.mtx.Lock()
-	o.status = Aborted
-	o.mtx.Unlock()
+	o.setStatus(Aborted)
 	o.logger.Debugln("Closing the exit channel")
-	close(o.exit)
-	close(o.err)
+	o.closeChannels()
 
 	return nil
 }
 
 // Pause pauses the operation temporarily.
 func (o *Operation) Pause() error {
-	o.mtx.RLock()
-	if o.status == Started {
-		o.mtx.RUnlock()
-		o.mtx.Lock()
-		o.status = Paused
-		o.mtx.Unlock()
+	if o.Status() == Started {
+		o.setStatus(Paused)
 		o.logger.Infoln("Paused the operation")
 		return nil
 	}
-	o.mtx.RUnlock()
 
 	return fmt.Errorf("cannot pause a non-started operation")
 }
@@ -315,19 +297,6 @@ func (o *Operation) Resume() error {
 	return fmt.Errorf("cannot resume a non-paused operation")
 }
 
-// Proceed is used whenever an error is called. When an operation error
-// occurs, the operation gets stuck unless Proceed is called.
-func (o *Operation) Proceed() {
-	defer func() {
-		if recover() != nil {
-			o.errWg.Add(1)
-		}
-	}()
-
-	o.logger.Infoln("Proceeded with the error")
-	o.errWg.Done()
-}
-
 // Error returns the error if there is any, or hangs if there isn't an
 // error.
 func (o *Operation) Error() OperationError {
@@ -352,6 +321,15 @@ func (o *Operation) SetSources(c Collection) {
 	o.src.setSlice(c)
 }
 
+func (o *Operation) closeChannels() {
+	o.mtx.Lock()
+	if o.err != nil {
+		close(o.err)
+	}
+	o.err = nil
+	o.mtx.Unlock()
+}
+
 // SetIndex sets the index for the collection. Can be used to skip a file
 // whilst it is being written to.
 func (o *Operation) SetIndex(n int) {
@@ -360,195 +338,154 @@ func (o *Operation) SetIndex(n int) {
 	o.logger.Debugf("SetIndex: len: %d", len(o.src.getSlice()))
 }
 
+func (o *Operation) setStatus(status uint8) {
+	o.mtx.Lock()
+	o.status = status
+	o.mtx.Unlock()
+}
+
+func (o *Operation) getStatus() uint8 {
+	o.mtx.RLock()
+	ret := o.status
+	o.mtx.RUnlock()
+
+	return ret
+}
+
+func (o *Operation) errOut(errObj OperationError, err error) {
+	errObj.Index = o.src.getIndex()
+	o.logger.Debugf("errOut: %s\n", err)
+	errObj.Error = err
+
+	o.mtx.Lock()
+	ch := o.err
+	o.mtx.Unlock()
+
+	if ch != nil {
+		o.Pause()
+		o.err <- errObj
+		o.logger.Debugf("errOut: sent the error: %s\n", err)
+	}
+}
+
+func (o *Operation) getRateLimit() float64 {
+	o.rateLimitMtx.Lock()
+	defer o.rateLimitMtx.Unlock()
+
+	return o.rateLimit
+}
+
 // do is the main loop for operation, it handles all file transfers
 // starting from index. do also adapts to any new files in the collection.
 func (o *Operation) do() {
 	o.logger.Infoln("do()")
+	o.src.setIndex(0)
 
-	o.once.Do(func() {
-		o.src.setIndex(0)
-		for {
-			arr := o.src.getSlice()
-			index := o.src.getIndex()
+	for {
+		arr := o.src.getSlice()
+		index := o.src.getIndex()
 
-			o.logger.Debugf("do(): loop: %d, %d\n", index, len(arr))
-			if len(arr) <= index {
-				o.logger.Debugln("do(): breaking...")
-				break
-			}
-
-			select {
-			case <-o.exit:
-				o.logger.Debugln("do(): <-o.exit")
-				o.mtx.RLock()
-				if o.status != Aborted && o.status != Finished {
-					o.logger.Debugln("Status != Aborted|Finished")
-					o.mtx.Lock()
-					o.status = Aborted
-					o.mtx.Unlock()
-
-					close(o.err)
-					close(o.exit)
-				}
-				o.mtx.RUnlock()
-
-				o.logger.Debugln("do(): returning from <-o.exit")
-				return
-			default:
-				o.mtx.RLock()
-				if o.status == Paused {
-					o.mtx.RUnlock()
-					o.logger.Infoln("do(): paused")
-					time.Sleep(opDelay)
-					continue
-				} else {
-					o.mtx.RUnlock()
-				}
-
-				srcFile := arr[index]
-				o.logger.Debugf("do(): srcFile: %d, %s\n", index, srcFile.File.Name())
-
-				o.logger.Debugln("do(): waiting")
-				o.errWg.Wait()
-				time.Sleep(opDelay)
-
-				o.logger.Debugln(o.src.getIndex(), index)
-				if o.src.getIndex() != index {
-					o.logger.Debugln("do(): continue because index has been updated")
-					continue
-				}
-
-				o.logger.Debugln("do(): done waiting")
-				o.errWg.Add(1)
-
-				errObj := OperationError{Src: srcFile, Dst: o.dst}
-				errOut := func(err error) {
-					errObj.Index = o.src.getIndex()
-					o.logger.Debugf("do(): errOut: %s\n", err)
-					errObj.Error = err
-					o.mtx.RLock()
-					if o.status != Aborted {
-						o.err <- errObj
-					}
-					o.mtx.RUnlock()
-				}
-
-				dirPath := path.Clean(path.Dir(srcFile.Path))
-				if len(dirPath) > 0 {
-					err := o.dst.MkdirAll(dirPath, 0755)
-					if err != nil {
-						errOut(fmt.Errorf("%w: %s", ErrMkdir, err.Error()))
-						continue
-					}
-				}
-
-				_, err := o.dst.Stat(srcFile.Path)
-				if err == nil {
-					errOut(ErrDstAlreadyExists)
-					continue
-				}
-
-				dstWriter, err := o.dst.OpenFile(srcFile.Path, os.O_WRONLY|os.O_CREATE, 0755)
-				if err != nil {
-					errOut(fmt.Errorf("%w: %s", ErrDstFile, err.Error()))
-					continue
-				}
-
-				srcReader, err := srcFile.Fs.Open(srcFile.Path)
-				if err != nil {
-					errOut(fmt.Errorf("%w: %s", ErrSrcFile, err.Error()))
-					continue
-				}
-
-				var size int64 = 0
-				reader := shapeio.NewReader(srcReader)
-				o.logger.Debugln("starting io.Copy")
-				_, err = io.Copy(progressWriter(func(p []byte) (int, error) {
-					n, err := dstWriter.Write(p)
-
-					if o.opProgress != nil {
-						// allow changing of size at writing speed levels
-						size += int64(n)
-						o.opProgress.Set(index, int64(size))
-					}
-
-					return n, err
-				}), readerFunc(func(p []byte) (int, error) {
-					select {
-					case <-o.exit:
-						return 0, ErrCancelled
-					default:
-						if o.src.getIndex() != index {
-							return 0, ErrSkipFile
-						}
-
-						for {
-							o.mtx.RLock()
-							if o.status != Paused {
-								o.mtx.RUnlock()
-								break
-							}
-
-							if o.src.getIndex() != index {
-								o.mtx.RUnlock()
-								return 0, ErrSkipFile
-							}
-							o.mtx.RUnlock()
-
-							time.Sleep(opDelay)
-						}
-
-						o.rateLimitMtx.Lock()
-						reader.SetRateLimit(o.rateLimit)
-						o.rateLimitMtx.Unlock()
-
-						return reader.Read(p)
-					}
-				}))
-				dstWriter.Close()
-				srcReader.Close()
-				if err != nil {
-					srcFile.Fs.RemoveAll(srcFile.Path)
-				}
-
-				if err != nil && err != ErrSkipFile {
-					errOut(fmt.Errorf("io.Copy: %w", err))
-					continue
-				}
-
-				o.logger.Infof("do(): done transfer: %d, %d, %s\n", index, len(arr), srcFile.File.Name())
-				o.errWg.Done()
-				o.logger.Debugln("do(): sending empty error")
-				o.mtx.RLock()
-				if o.status != Aborted && o.status != Finished {
-					o.err <- errObj
-				}
-				o.mtx.RUnlock()
-				o.logger.Debugln("do(): done")
-
-				if err == nil {
-					o.src.setIndex(o.src.index + 1)
-				}
-			}
-
-			time.Sleep(opDelay)
+		o.logger.Debugf("do(): loop: %d, %d\n", index, len(arr))
+		if len(arr) <= index {
+			break
 		}
 
-		o.logger.Infoln("do(): loop done")
-		o.mtx.RLock()
-		status := o.status
-		o.mtx.RUnlock()
+		srcFile := arr[index]
 
-		if status != Aborted {
+		o.logger.Debugf("do(): srcFile: %d, %s\n", index, srcFile.File.Name())
+		o.logger.Debugln("do(): waiting")
+
+		for o.getStatus() == Paused {
+			time.Sleep(opPauseDelay)
+		}
+
+		if o.getStatus() == Aborted {
+			o.logger.Debugln("do(): status == aborted")
+			o.closeChannels()
+			return
+		}
+
+		errObj := OperationError{Src: srcFile, Dst: o.dst}
+		errOut := func(err error) { o.errOut(errObj, err) }
+
+		o.logger.Debugln(o.src.getIndex(), index)
+		if o.src.getIndex() != index {
+			o.logger.Debugln("do(): skipping file")
+			errOut(ErrSkipFile)
+			continue
+		}
+
+		o.logger.Debugln("do(): done waiting")
+
+		if err := mkdirIfNeeded(o.dst, srcFile.Path); err != nil {
+			errOut(fmt.Errorf("mkdirIfNeeded: %w", err))
+			continue
+		}
+
+		srcReader, dstWriter, err := openSrcAndDir(srcFile.Fs, o.dst, srcFile.Path)
+		if err != nil {
+			errOut(fmt.Errorf("openSrcAndDir: %w", err))
+			continue
+		}
+
+		o.logger.Debugln("starting io.Copy")
+
+		n, err := io.Copy(o.operationWriter(dstWriter, index), o.operationReader(srcReader, index))
+		if o.opProgress != nil {
+			o.opProgress.Set(index, n)
+		}
+
+		closeAll(srcReader, dstWriter)
+		removeIfErrNotNil(err, FileInfo{
+			Fs:   o.dst,
+			Path: srcFile.Path,
+		})
+
+		if err != nil && err != ErrSkipFile {
+			errOut(fmt.Errorf("io.Copy: %w", err))
+			continue
+		}
+
+		o.logger.Infof("do(): done transfer: %d, %d, %s\n", index, len(arr), srcFile.File.Name())
+		o.logger.Debugln("do(): sending empty error")
+
+		if o.getStatus() != Aborted {
 			o.mtx.Lock()
-			o.status = Finished
+			if o.err != nil {
+				o.err <- errObj
+			}
 			o.mtx.Unlock()
-			o.logger.Debugln("do(): closing o.err")
-			close(o.err)
-			o.logger.Debugln("do(): closing o.exit")
-			close(o.exit)
 		}
-	})
+
+		o.logger.Debugln("do(): done")
+
+		newIndex := o.src.getIndex() + 1
+		o.src.setIndex(newIndex)
+	}
+
+	o.logger.Infoln("do(): loop done")
+
+	o.setStatus(Finished)
+	o.closeChannels()
+}
+
+func (o *Operation) operationReader(srcReader io.Reader, index int) *operationReader {
+	return &operationReader{
+		getRateLimit: o.getRateLimit,
+		getIndex:     o.src.getIndex,
+		getStatus:    o.getStatus,
+		reader:       shapeio.NewReader(srcReader),
+		cachedIndex:  index,
+	}
+}
+
+func (o *Operation) operationWriter(writer io.Writer, index int) *operationWriter {
+	return &operationWriter{
+		size:     0,
+		progress: o.opProgress,
+		index:    index,
+		writer:   writer,
+	}
 }
 
 type PublicOperation struct {
@@ -567,4 +504,89 @@ func (po PublicOperation) Map() map[string]interface{} {
 
 func (po PublicOperation) MarshalJSON() ([]byte, error) {
 	return json.Marshal(po.Map())
+}
+
+func mkdirIfNeeded(fs afero.Fs, pathval string) (err error) {
+	dirPath := path.Clean(path.Dir(pathval))
+	if len(dirPath) > 0 {
+		err = fs.MkdirAll(dirPath, 0755)
+	}
+
+	return err
+}
+
+func openSrcAndDir(srcfs, dstfs afero.Fs, filepath string) (afero.File, afero.File, error) {
+	_, err := dstfs.Stat(filepath)
+	if err == nil {
+		return nil, nil, ErrDstAlreadyExists
+	}
+
+	dstWriter, err := dstfs.OpenFile(filepath, os.O_WRONLY|os.O_CREATE, 0755)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %s", ErrDstFile, err.Error())
+	}
+
+	srcReader, err := srcfs.OpenFile(filepath, os.O_RDONLY, 0755)
+	if err != nil {
+		dstWriter.Close()
+		return nil, nil, fmt.Errorf("%w: %s", ErrSrcFile, err.Error())
+	}
+
+	return srcReader, dstWriter, nil
+}
+
+func closeAll(arr ...io.Closer) {
+	for _, v := range arr {
+		v.Close()
+	}
+}
+
+func removeIfErrNotNil(err error, srcFile FileInfo) {
+	if err != nil {
+		srcFile.Fs.RemoveAll(srcFile.Path)
+	}
+}
+
+type operationReader struct {
+	reader      *shapeio.Reader
+	getIndex    func() int
+	cachedIndex int
+	getStatus   func() uint8
+
+	getRateLimit func() float64
+}
+
+func (rd *operationReader) Read(p []byte) (int, error) {
+	if rd.getIndex() != rd.cachedIndex {
+		return 0, ErrSkipFile
+	} else if rd.getStatus() == Aborted {
+		return 0, ErrCancelled
+	}
+
+	for rd.getStatus() == Paused {
+		time.Sleep(opPauseDelay)
+	}
+
+	rd.reader.SetRateLimit(rd.getRateLimit())
+
+	return rd.reader.Read(p)
+}
+
+type operationWriter struct {
+	progress ProgressSetter
+	size     int64
+	writer   io.Writer
+	index    int
+}
+
+func (wr *operationWriter) Write(p []byte) (int, error) {
+	n, err := wr.writer.Write(p)
+
+	if wr.progress != nil {
+		// allow changing of size at writing speed levels
+		wr.size += int64(n)
+		wr.progress.Set(wr.index, int64(wr.size))
+	}
+
+	return n, err
 }

@@ -616,11 +616,16 @@
             "description": "The ID of the operation",
             "example": "51afb"
           },
-          "srcs example:": {
+          "srcs": {
             "type": "array",
+            "description": "The array of file paths",
             "items": {
               "type": "string"
-            }
+            },
+            "example": [
+              "/home/tim/src-file.txt",
+              "/home/tim/src-dir/"
+            ]
           }
         }
       },
