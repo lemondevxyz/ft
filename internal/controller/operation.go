@@ -180,9 +180,6 @@ type Operation struct {
 	mtx sync.Mutex
 }
 
-func (o *Operation) lock()   { o.mtx.Lock() }
-func (o *Operation) unlock() { o.mtx.Unlock() }
-
 func (o *Operation) MarshalJSON() ([]byte, error) {
 	m := o.Map()
 
@@ -290,8 +287,23 @@ func (oc *OperationController) ConvertPathsToFilesOrFail(ctrl model.Controller, 
 	return collect, nil
 }
 
-// NewOperations reads from the reader and writes the response
-// to the controller.
+func (oc *OperationController) opGoRoutine(op *Operation) {
+	for {
+		err := op.Error()
+		if op.Status() == model.Aborted || op.Status() == model.Finished {
+			oc.channel.Announce(EventOperationDone(op.ID))
+			oc.operationsMtx.Lock()
+			delete(oc.operations, op.ID)
+			oc.operationsMtx.Unlock()
+			break
+		} else {
+			oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
+		}
+	}
+}
+
+// NewOperation creates a new operation from the reader's parameters and
+// adds it to the controller's map of operations.
 //
 // @Title Create a new operation
 // @Description Create a new operation from scratch. Do note: New operations by default have the Default status.
@@ -309,21 +321,11 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 	collection, err := oc.ConvertPathsToFilesOrFail(ctrl, strct.Src)
 	if err != nil {
 		return nil, err
-	}
-
-	if _, err := StatOrFail(ctrl, oc.fs, strct.Dst); err != nil {
+	} else if _, err := StatOrFail(ctrl, oc.fs, strct.Dst); err != nil {
 		return nil, err
 	}
 
-	oper, err := model.NewOperation(collection, afero.NewBasePathFs(oc.fs, strct.Dst))
-	if err != nil {
-
-		ctrl.Error(model.ControllerError{
-			ID:     "model/operation-error",
-			Reason: err.Error(),
-		})
-		return nil, err
-	}
+	oper, _ := model.NewOperation(collection, afero.NewBasePathFs(oc.fs, strct.Dst))
 
 	id, err := oc.AddOperation(oper, strct.Dst, strct.WriterID)
 	if err != nil {
@@ -338,28 +340,13 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 	o, _ := oc.GetOperationOrFail(nil, id)
 
 	oper.SetLogger(&operationLogger{oc.channel, id, sync.Mutex{}})
-
 	oper.SetProgress(&ProgressBroadcaster{
 		id:      id,
 		channel: oc.channel,
 	})
 
-	go oc.channel.Announce(EventOperationNew(o))
-
-	go func(op *Operation) {
-		for {
-			err := op.Error()
-			if op.Status() == model.Aborted || op.Status() == model.Finished {
-				oc.channel.Announce(EventOperationDone(op.ID))
-				oc.operationsMtx.Lock()
-				delete(oc.operations, op.ID)
-				oc.operationsMtx.Unlock()
-				break
-			} else {
-				oc.channel.Announce(EventOperationError(op.ID, op.Destination, err))
-			}
-		}
-	}(o)
+	oc.channel.Announce(EventOperationNew(o))
+	go oc.opGoRoutine(o)
 
 	res := OperationNewValue{id}
 	ctrl.Value(res)
@@ -397,7 +384,7 @@ func (oc *OperationController) GetOperationOrFail(ctrl model.Controller, id stri
 
 type OperationSetSourcesData struct {
 	ID   string   `json:"id" example:"51afb" description:"The ID of the operation"`
-	Srcs []string `json:"srcs example:"[\"/home/tim/src-file.txt\", \"/home/tim/src-dir/\"]" description:"The array of file paths"`
+	Srcs []string `json:"srcs" example:"[\"/home/tim/src-file.txt\", \"/home/tim/src-dir/\"]" description:"The array of file paths"`
 }
 
 type OperationSetSourcesValue OperationSetSourcesData
@@ -437,16 +424,6 @@ func (oc *OperationController) SetSources(rd io.Reader, ctrl model.Controller) e
 		return err
 	}
 
-	if len(collect) == 0 {
-		err := fmt.Errorf("collection cannot be empty")
-
-		ctrl.Error(model.ControllerError{
-			ID:     "controller/empty-collection",
-			Reason: err.Error(),
-		})
-		return err
-	}
-
 	val.SetSources(collect)
 	ctrl.Value(strct)
 
@@ -480,7 +457,7 @@ type OperationRateLimitData struct {
 // @Title Set the operation's rate limit
 // @Description This route allows the client to limit how fast an operation can run.
 // @Param   val body OperationRateLimitData true "The operation ID alongside the rate limit"
-// @Success 200 object OperaitonGenericData "OperationRateLimitdata JSON"
+// @Success 200 object OperationGenericData "OperationRateLimitdata JSON"
 // @Failure 400 object model.ControllerError "model.ControllerError JSON"
 // @Resource operation routes
 // @Route /api/v0/op/set-rate-limit [post]
@@ -544,10 +521,10 @@ func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error
 		}
 	case model.Started:
 		var err error
-		if op.Status() == model.Default {
-			err = op.Start()
-		} else if op.Status() == model.Paused {
+		if op.Status() == model.Paused {
 			err = op.Resume()
+		} else {
+			err = op.Start()
 		}
 		if err != nil {
 			sendErr(err)
@@ -573,87 +550,8 @@ func (oc *OperationController) Status(rd io.Reader, ctrl model.Controller) error
 }
 
 // DEPRECATED
-func (oc *OperationController) Pause(rd io.Reader, ctrl model.Controller) error {
-	strct := &OperationGenericData{}
-	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return err
-	}
-
-	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
-	if err != nil {
-		return err
-	}
-
-	op.Pause()
-	go oc.channel.Announce(EventOperationUpdate(op))
-	ctrl.Value(strct)
-
-	return nil
-}
-
-// DEPRECATED
-func (oc *OperationController) Resume(rd io.Reader, ctrl model.Controller) error {
-	strct := &OperationGenericData{}
-	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return err
-	}
-
-	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
-	if err != nil {
-		return err
-	}
-
-	op.Resume()
-	go oc.channel.Announce(EventOperationUpdate(op))
-	ctrl.Value(strct)
-
-	return nil
-}
-
-// DEPRECATED
-func (oc *OperationController) Start(rd io.Reader, ctrl model.Controller) error {
-	strct := &OperationGenericData{}
-	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return err
-	}
-
-	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
-	if err != nil {
-		return err
-	}
-
-	op.Start()
-	go oc.channel.Announce(EventOperationUpdate(op))
-	ctrl.Value(strct)
-
-	return nil
-}
-
-// DEPRECATED
-func (oc *OperationController) Exit(rd io.Reader, ctrl model.Controller) error {
-	strct := &OperationGenericData{}
-	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return err
-	}
-
-	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
-	if err != nil {
-		return err
-	}
-
-	op.Exit()
-
-	oc.operationsMtx.Lock()
-	delete(oc.operations, strct.ID)
-	oc.operationsMtx.Unlock()
-
-	ctrl.Value(strct)
-
-	return nil
-}
-
 // @Title Proceed with the operation
-// @Description This route should only be used once an operation has occurred an error. Basically, it tells the operation "we've solved whatever caused the error, continue copying the files.". This route should not be confused with a paused state as an error and a paused are completely different states.
+// @Description DEPRECATED This route should only be used once an operation has occurred an error. Basically, it tells the operation "we've solved whatever caused the error, continue copying the files.". This route should not be confused with a paused state as an error and a paused are completely different states.
 // @Param   val body OperationGenericData true "The operation ID"
 // @Success 200 object OperationGenericData   "OperationGenericData JSON"
 // @Failure 400 object model.ControllerError   "model.ControllerError JSON"
@@ -670,40 +568,10 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 		return err
 	}
 
-	//go oc.channel.Announce(EventOperationUpdate(op))
-	op.Proceed()
+	op.Resume()
 	ctrl.Value(strct)
 
 	return nil
-}
-
-// DEPRECATED
-type OperationSizeValue struct {
-	Size int64 `json:"size" example:"1024" description:"The size of the operation in bytes"`
-}
-
-// @Title Gets the size of the operation
-// @Description Returns the size of the operation. Do note: this route is unnecessary and will be removed in future releases, because the operation's size is sent to the SSE route upon creation and operation updates.
-// @Param   val body OperationGenericData true "The operation ID"
-// @Success 200 object OperationSizeValue    "OperationSizeValue JSON"
-// @Failure 400 object model.ControllerError "model.ControllerError JSON"
-// @Resource operation routes
-// @Route /api/v0/op/size [post]
-func (oc *OperationController) Size(rd io.Reader, ctrl model.Controller) (*OperationSizeValue, error) {
-	strct := &OperationGenericData{}
-	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
-		return nil, err
-	}
-
-	op, err := oc.GetOperationOrFail(ctrl, strct.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	val := &OperationSizeValue{op.Size()}
-
-	ctrl.Value(val)
-	return val, nil
 }
 
 type OperationSetIndexData struct {

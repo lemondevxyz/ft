@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 
 	"github.com/cespare/xxhash"
 	"github.com/lemondevxyz/ft/internal/model"
@@ -164,24 +165,7 @@ func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirVal
 	for _, v := range fis {
 		path := path.Join(r.Name, v.Name())
 
-		file := model.NewOsFileInfo(v, path, path)
-		if file.Mode()&fs.ModeSymlink != 0 {
-			rd, ok := f.fs.(afero.LinkReader)
-			if ok {
-				absPath, err := rd.ReadlinkIfPossible(path)
-				if err == nil {
-					stat, err := f.fs.Stat(absPath)
-					if err == nil {
-						file.AbsolutePath = absPath
-
-						val := stat.Mode()
-						file.FakeMode = &val
-					}
-				}
-			}
-		}
-
-		ret = append(ret, file)
+		ret = append(ret, resolveSymlink(f.fs, model.NewOsFileInfo(v, path, path)))
 	}
 
 	val := &ReadDirValue{Files: ret}
@@ -189,6 +173,26 @@ func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirVal
 
 	return val, nil
 
+}
+
+func resolveSymlink(afs afero.Fs, file model.OsFileInfo) model.OsFileInfo {
+	if file.Mode()&fs.ModeSymlink != 0 {
+		rd, ok := afs.(afero.LinkReader)
+		if ok {
+			absPath, err := rd.ReadlinkIfPossible(file.Path)
+			if err == nil {
+				stat, err := afs.Stat(absPath)
+				if err == nil {
+					file.AbsolutePath = absPath
+
+					val := stat.Mode()
+					file.FakeMode = &val
+				}
+			}
+		}
+	}
+
+	return file
 }
 
 type SizeData FsGenericData
@@ -209,46 +213,18 @@ func (f *FsController) Size(rd io.Reader, ctrl model.Controller) (int64, error) 
 		return -1, err
 	}
 
-	stat, err := f.fs.Stat(val.Name)
+	size, err := calculateSize(f.fs, val.Name)
 	if err != nil {
 		ctrl.Error(model.ControllerError{
-			ID:     "fs-stat",
+			ID:     "fs/calculate-size",
 			Reason: err.Error(),
 		})
 		return -1, err
 	}
 
-	if !stat.Mode().IsDir() {
-		ctrl.Value(SizeValue{
-			Size: stat.Size(),
-		})
-		return stat.Size(), nil
-	}
+	ctrl.Value(SizeValue{size})
 
-	var size int64 = 0
-	err = afero.Walk(f.fs, val.Name, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		size += info.Size()
-
-		return nil
-	})
-	if err != nil {
-		ctrl.Error(model.ControllerError{
-			ID:     "fs-walk",
-			Reason: err.Error(),
-		})
-		return -1, err
-	}
-
-	ctrl.Value(SizeValue{
-		Size: size,
-	})
-
-	return size, nil
-
+	return size, err
 }
 
 type VerifyValue struct {
@@ -262,133 +238,151 @@ type VerifyValue struct {
 // @Failure 400 object model.ControllerError "model.ControllerError JSON"
 // @Resource file system routes
 // @Route /api/v0/fs/verify [post]
-func (f *FsController) Verify(rd io.Reader, ctrl model.Controller) error {
+func (f *FsController) Verify(rd io.Reader, ctrl model.Controller) (err error) {
+	var stage string
+	defer func() {
+		if localErr := recover(); localErr != nil {
+			err = localErr.(error)
+			ctrl.Error(model.ControllerError{
+				ID:     stage,
+				Reason: err.Error(),
+			})
+		}
+	}()
+
 	val := &MoveData{}
+	stage = "unmarshal"
 	if err := DecodeOrFail(rd, ctrl, val); err != nil {
-		return err
+		panic(err)
 	}
 
-	srcStat, err := f.fs.Stat(val.Src)
+	stage = "fs-src-size"
+	srcSize, err := fileSize(f.fs, val.Src)
 	if err != nil {
-		ctrl.Error(model.ControllerError{
-			ID:     "fs-src-stat",
-			Reason: err.Error(),
-		})
-		return err
+		panic(err)
 	}
 
-	dstStat, err := f.fs.Stat(val.Dst)
+	stage = "fs-dst-size"
+	dstSize, err := fileSize(f.fs, val.Dst)
 	if err != nil {
-		ctrl.Error(model.ControllerError{
-			ID:     "fs-dst-stat",
-			Reason: err.Error(),
-		})
-		return err
+		panic(err)
 	}
 
-	if srcStat.IsDir() || dstStat.IsDir() {
-		err := fmt.Errorf("src and dst must not be directories")
-		ctrl.Error(model.ControllerError{
-			ID:     "fs-src-dst-directory",
-			Reason: err.Error(),
-		})
-
-		return err
+	stage = "fs-src-dst-size"
+	if srcSize != dstSize {
+		panic(fmt.Errorf("sizes do not match: %d, %d", srcSize, dstSize))
 	}
 
-	if srcStat.Size() != dstStat.Size() {
-		err := fmt.Errorf("sizes do not match: %d, %d", srcStat.Size(), dstStat.Size())
-		ctrl.Error(model.ControllerError{
-			ID:     "fs-src-dst-size",
-			Reason: err.Error(),
-		})
-
-		return err
-	}
-
-	var srcSum uint64
-	srcChecksumFile := val.Src + ".xxh64"
-	_, err = f.fs.Stat(srcChecksumFile)
-	if err == nil {
-		file, err := f.fs.OpenFile(srcChecksumFile, os.O_RDONLY, 0755)
-		if err != nil {
-			file.Close()
-			ctrl.Error(model.ControllerError{
-				ID:     "fs-src-hash-file",
-				Reason: err.Error(),
-			})
-
-			return err
-		}
-
-		bites, err := ioutil.ReadAll(file)
-		if err != nil {
-			file.Close()
-			ctrl.Error(model.ControllerError{
-				ID:     "fs-src-hash-reading",
-				Reason: err.Error(),
-			})
-
-			return err
-		}
-
-		num, err := strconv.ParseUint(string(bites), 16, 64)
-		if err != nil {
-			file.Close()
-			ctrl.Error(model.ControllerError{
-				ID:     "fs-src-hash-conversion",
-				Reason: err.Error(),
-			})
-
-			return err
-		}
-
-		srcSum = num
-	} else {
-		srcFile, err := f.fs.OpenFile(val.Src, os.O_RDONLY, 0755)
-		if err != nil {
-			srcFile.Close()
-			ctrl.Error(model.ControllerError{
-				ID:     "fs-src-file",
-				Reason: err.Error(),
-			})
-
-			return err
-		}
-
-		xxh64 := xxhash.New()
-		io.Copy(xxh64, srcFile)
-		srcFile.Close()
-		srcSum = xxh64.Sum64()
-		xxh64.Reset()
-	}
-
-	dstFile, err := f.fs.OpenFile(val.Dst, os.O_RDONLY, 0755)
+	stage = "fs-src-hash"
+	srcSum, err := getHashFromFs(f.fs, val.Src)
 	if err != nil {
-		dstFile.Close()
-		ctrl.Error(model.ControllerError{
-			ID:     "fs-dst-file",
-			Reason: err.Error(),
-		})
-
-		return err
+		panic(err)
 	}
 
-	xxh64 := xxhash.New()
-	io.Copy(xxh64, dstFile)
-	dstFile.Close()
-	dstSum := xxh64.Sum64()
+	stage = "fs-dst-hash"
+	dstSum, err := getHashFromFs(f.fs, val.Dst)
+	if err != nil {
+		panic(err)
+	}
 
+	stage = "fs-src-dst-hash-comparison"
 	if srcSum != dstSum {
-		err := fmt.Errorf("sums do not match: %x - %x", srcSum, dstSum)
-		ctrl.Error(model.ControllerError{
-			ID:     "fs-src-dst-checksum-mismatch",
-			Reason: err.Error(),
-		})
-
-		return err
+		panic(fmt.Errorf("sums do not match: %s [%x] - %s [%x]", val.Src, srcSum, val.Dst, dstSum))
 	}
 
 	ctrl.Value(val)
 	return nil
+}
+
+func fileSize(afs afero.Fs, path string) (int64, error) {
+	stat, err := afs.Stat(path)
+	if err != nil {
+		return -1, err
+	}
+
+	if stat.Mode().IsDir() {
+		return -1, fs.ErrInvalid
+	}
+
+	return stat.Size(), nil
+}
+
+func getHashFromFs(fs afero.Fs, path string) (uint64, error) {
+	file, err := fileOrHashFile(fs, path)
+	defer func() {
+		if file != nil {
+			file.Close()
+		}
+	}()
+	if err != nil {
+		return 0, err
+	}
+
+	var sum uint64
+	if strings.HasSuffix(file.Name(), ".xxh64") {
+		sum, err = readAsHash(file)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		sum = computeHash(file)
+	}
+
+	return sum, nil
+}
+
+func fileOrHashFile(fs afero.Fs, path string) (afero.File, error) {
+	file, err := fs.OpenFile(path+".xxh64", os.O_RDONLY, 0755)
+	if err == nil {
+		return file, nil
+	}
+
+	file, err = fs.OpenFile(path, os.O_RDONLY, 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	return file, nil
+}
+
+func computeHash(rd io.Reader) uint64 {
+	xxh64 := xxhash.New()
+	io.Copy(xxh64, rd)
+	return xxh64.Sum64()
+}
+
+func readAsHash(rd io.Reader) (uint64, error) {
+	bytes, err := ioutil.ReadAll(rd)
+	if err != nil {
+		return 0, err
+	}
+
+	return strconv.ParseUint(string(bytes), 16, 64)
+}
+
+func calculateSize(afs afero.Fs, path string) (int64, error) {
+	stat, err := afs.Stat(path)
+	if err != nil {
+		return -1, err
+	}
+
+	if !stat.Mode().IsDir() {
+		return stat.Size(), nil
+	}
+
+	var size int64 = 0
+	err = afero.Walk(afs, path, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		size += info.Size()
+
+		return nil
+	})
+	if err != nil {
+		return -1, err
+	}
+
+	return size, nil
 }

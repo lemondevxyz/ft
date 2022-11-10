@@ -335,7 +335,7 @@
           "operation routes"
         ],
         "summary": "Proceed with the operation",
-        "description": " This route should only be used once an operation has occurred an error. Basically, it tells the operation \"we've solved whatever caused the error, continue copying the files.\". This route should not be confused with a paused state as an error and a paused are completely different states.",
+        "description": " DEPRECATED This route should only be used once an operation has occurred an error. Basically, it tells the operation \"we've solved whatever caused the error, continue copying the files.\". This route should not be confused with a paused state as an error and a paused are completely different states.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -470,47 +470,6 @@
           "required": true
         }
       }
-    },
-    "/api/v0/op/size": {
-      "post": {
-        "responses": {
-          "200": {
-            "description": "OperationSizeValue JSON",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OperationSizeValue"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "model.ControllerError JSON",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ControllerError"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "operation routes"
-        ],
-        "summary": "Gets the size of the operation",
-        "description": " Returns the size of the operation. Do note: this route is unnecessary and will be removed in future releases, because the operation's size is sent to the SSE route upon creation and operation updates.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OperationGenericData"
-              }
-            }
-          },
-          "required": true
-        }
-      }
     }
   },
   "components": {
@@ -626,16 +585,6 @@
               "/home/tim/src-file.txt",
               "/home/tim/src-dir/"
             ]
-          }
-        }
-      },
-      "OperationSizeValue": {
-        "type": "object",
-        "properties": {
-          "size": {
-            "type": "integer",
-            "description": "The size of the operation in bytes",
-            "example": 1024
           }
         }
       },
