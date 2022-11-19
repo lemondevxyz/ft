@@ -10,8 +10,8 @@ ft is a file browser that allows for file operations remotely. ft has a server/c
 - [x] Verifying files
 - [x] Pausing, Resuming and cancelling opeartions
 - [x] Adding more files to the operations or removing operations
-- [ ] Manual transfer speed limit
-- [x] OpenAPI specification or something similar
+- [x] Manual transfer speed limit
+- [x] OpenAPI specification
 
 ## non-features
 - [ ] Authentication; should be done by an outside application

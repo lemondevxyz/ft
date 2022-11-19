@@ -210,23 +210,24 @@ func TestOperationDo(t *testing.T) {
 
 		op.SetIndex(0)
 		op.setStatus(Started)
-		op.SetRateLimit(256)
+		op.SetRateLimit(384)
 		op.err = make(chan OperationError)
 		op.dst = oldDst
 
 		finish := make(chan struct{})
 		go func() {
 			op.do()
-			close(finish)
+			finish <- struct{}{}
 		}()
 		go func() {
-			<-time.After(time.Millisecond * 10)
+			<-time.After(time.Millisecond)
 			op.setStatus(Aborted)
 		}()
 
-		opErr, ok := <-op.err
-		is.Equal(errors.Unwrap(opErr.Error), ErrCancelled)
-		is.True(ok)
+		opErr := op.Error()
+		t.Log(buf.String())
+		t.Log(opErr.Error)
+		is.Equal(opErr.Error, ErrCancelled)
 
 		file := op.Sources()[op.Index()]
 
@@ -651,8 +652,23 @@ func TestPublicOperationMarshalJSON(t *testing.T) {
 
 	is.NoErr(err1)
 	is.NoErr(err2)
-
 	is.Equal(bytes1, bytes2)
+
+	afs := initFS(t)
+	stat, err := afs.Stat("content/level1.txt")
+	is.NoErr(err)
+
+	p.errSync = &OperationError{Error: ErrSkipFile, Src: FileInfo{
+		File: stat,
+	}}
+
+	bytes3, err := p.MarshalJSON()
+	is.NoErr(err)
+
+	newm := map[string]json.RawMessage{}
+	is.NoErr(json.Unmarshal(bytes3, &newm))
+
+	is.True(newm["err"] != nil)
 }
 
 type failableWalk struct {
@@ -819,4 +835,8 @@ func TestJsonErrorMarshalJSON(t *testing.T) {
 	is.NoErr(err)
 
 	is.Equal(string(bytes), "\"1st\"")
+
+	var j *JSONError
+	_, err = j.MarshalJSON()
+	is.True(err != nil)
 }

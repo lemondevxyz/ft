@@ -430,7 +430,10 @@ func (o *Operation) do() {
 		}
 
 		errObj := OperationError{Src: srcFile, Dst: o.dst}
-		errOut := func(err error) { o.errOut(errObj, err) }
+		errOut := func(err error) {
+			o.errOut(errObj, err)
+			o.logger.Debugf("do(): error out: %v", errObj)
+		}
 
 		o.logger.Debugln(o.src.getIndex(), index)
 		if o.src.getIndex() != index {
@@ -453,10 +456,9 @@ func (o *Operation) do() {
 			continue
 		}
 
-		o.logger.Debugln("do(): starting io.Copy with 1 KB buffer")
-		buf := make([]byte, 1024)
+		o.logger.Debugln("do(): starting io.Copy")
 
-		n, err := io.CopyBuffer(o.operationWriter(dstWriter, index), o.operationReader(srcReader, index), buf)
+		n, err := io.Copy(o.operationWriter(dstWriter, index), o.operationReader(srcReader, index))
 		if o.opProgress != nil {
 			o.opProgress.Set(index, n)
 		}
@@ -468,17 +470,13 @@ func (o *Operation) do() {
 		})
 
 		if err != nil && err != ErrSkipFile {
-			o.mtx.Lock()
-			o.errSync = &errObj
-			o.err <- errObj
-			o.mtx.Unlock()
+			errOut(err)
 			continue
 		}
 
 		o.logger.Infof("do(): done transfer: %d, %d, %s\n", index, len(arr), srcFile.File.Name())
-		o.logger.Debugln("do(): sending empty error")
-
 		if o.getStatus() != Aborted {
+			o.logger.Debugln("do(): sending empty error")
 			o.mtx.Lock()
 			if o.err != nil {
 				o.errSync = &errObj
@@ -599,6 +597,7 @@ type operationReader struct {
 }
 
 func (rd *operationReader) Read(p []byte) (int, error) {
+
 	if rd.getIndex() != rd.cachedIndex {
 		return 0, ErrSkipFile
 	} else if rd.getStatus() == Aborted {
