@@ -809,3 +809,14 @@ func TestOperationExit(t *testing.T) {
 	is.NoErr(op.Exit())
 	is.Equal(op.err, nil)
 }
+
+func TestJsonErrorMarshalJSON(t *testing.T) {
+	nestedErr := fmt.Errorf("3rd: %w", fmt.Errorf("2nd: %w", fmt.Errorf("1st")))
+
+	is := is.New(t)
+
+	bytes, err := (&JSONError{nestedErr}).MarshalJSON()
+	is.NoErr(err)
+
+	is.Equal(string(bytes), "\"1st\"")
+}

@@ -10,14 +10,14 @@ type sorcerer struct {
 
 func (s *sorcerer) setIndex(i int) {
 	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	s.index = i
-	s.mtx.Unlock()
 }
 
 func (s *sorcerer) setSlice(v Collection) {
 	s.mtx.Lock()
+	defer s.mtx.Unlock()
 	s.slice = v
-	s.mtx.Unlock()
 }
 
 func (s *sorcerer) getIndex() int {

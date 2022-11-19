@@ -55,6 +55,28 @@ type OperationFile struct {
 	IsDir   bool
 }
 
+type JSONError struct {
+	Err error
+}
+
+func (j *JSONError) MarshalJSON() ([]byte, error) {
+	if j == nil {
+		return nil, errors.New("nil pointer")
+	}
+
+	lastErr := j.Err
+	for {
+		err := errors.Unwrap(lastErr)
+		if err == nil {
+			break
+		}
+
+		lastErr = err
+	}
+
+	return json.Marshal(lastErr.Error())
+}
+
 // OperationError is an error that can occur in the middle of an
 // operation.
 type OperationError struct {
@@ -78,8 +100,11 @@ type Operation struct {
 	mtx    sync.RWMutex
 	status uint8
 	once   sync.Once
-	err    chan OperationError
-	errWg  sync.WaitGroup
+	// errSync is only a field because new clients should have the ability
+	// to see a previous error.
+	errSync *OperationError
+	err     chan OperationError
+	errWg   sync.WaitGroup
 	// src fields
 	// srcMtx is used whenever src or srcIndex is going to be modified
 	src *sorcerer
@@ -283,16 +308,14 @@ func (o *Operation) Size() int64 {
 
 // Resume resumes the operation.
 func (o *Operation) Resume() error {
-	o.mtx.RLock()
-	if o.status == Paused {
-		o.mtx.RUnlock()
+	if o.getStatus() == Paused {
 		o.mtx.Lock()
+		o.errSync = nil
 		o.status = Started
 		o.mtx.Unlock()
 		o.logger.Infoln("Resumed the operation")
 		return nil
 	}
-	o.mtx.RUnlock()
 
 	return fmt.Errorf("cannot resume a non-paused operation")
 }
@@ -363,12 +386,13 @@ func (o *Operation) errOut(errObj OperationError, err error) {
 
 	if ch != nil {
 		o.Pause()
+		o.errSync = &errObj
 		o.err <- errObj
 		o.logger.Debugf("errOut: sent the error: %s\n", err)
 	}
 }
 
-func (o *Operation) getRateLimit() float64 {
+func (o *Operation) RateLimit() float64 {
 	o.rateLimitMtx.Lock()
 	defer o.rateLimitMtx.Unlock()
 
@@ -411,6 +435,7 @@ func (o *Operation) do() {
 		o.logger.Debugln(o.src.getIndex(), index)
 		if o.src.getIndex() != index {
 			o.logger.Debugln("do(): skipping file")
+
 			errOut(ErrSkipFile)
 			continue
 		}
@@ -428,9 +453,10 @@ func (o *Operation) do() {
 			continue
 		}
 
-		o.logger.Debugln("starting io.Copy")
+		o.logger.Debugln("do(): starting io.Copy with 1 KB buffer")
+		buf := make([]byte, 1024)
 
-		n, err := io.Copy(o.operationWriter(dstWriter, index), o.operationReader(srcReader, index))
+		n, err := io.CopyBuffer(o.operationWriter(dstWriter, index), o.operationReader(srcReader, index), buf)
 		if o.opProgress != nil {
 			o.opProgress.Set(index, n)
 		}
@@ -442,7 +468,10 @@ func (o *Operation) do() {
 		})
 
 		if err != nil && err != ErrSkipFile {
-			errOut(fmt.Errorf("io.Copy: %w", err))
+			o.mtx.Lock()
+			o.errSync = &errObj
+			o.err <- errObj
+			o.mtx.Unlock()
 			continue
 		}
 
@@ -452,6 +481,7 @@ func (o *Operation) do() {
 		if o.getStatus() != Aborted {
 			o.mtx.Lock()
 			if o.err != nil {
+				o.errSync = &errObj
 				o.err <- errObj
 			}
 			o.mtx.Unlock()
@@ -471,7 +501,7 @@ func (o *Operation) do() {
 
 func (o *Operation) operationReader(srcReader io.Reader, index int) *operationReader {
 	return &operationReader{
-		getRateLimit: o.getRateLimit,
+		getRateLimit: o.RateLimit,
 		getIndex:     o.src.getIndex,
 		getStatus:    o.getStatus,
 		reader:       shapeio.NewReader(srcReader),
@@ -494,12 +524,24 @@ type PublicOperation struct {
 }
 
 func (po PublicOperation) Map() map[string]interface{} {
-	return map[string]interface{}{
-		"index":  po.Index(),
-		"src":    po.src.getSlice(),
-		"status": po.status,
-		"dst":    po.Destination,
+	m := map[string]interface{}{
+		"index":     po.Index(),
+		"src":       po.src.getSlice(),
+		"status":    po.status,
+		"dst":       po.Destination,
+		"rateLimit": po.RateLimit(),
 	}
+
+	if po.errSync != nil {
+		m["err"] = map[string]interface{}{
+			"index": po.errSync.Index,
+			"src":   po.errSync.Src.File.Name(),
+			"dst":   po.Destination,
+			"error": &JSONError{po.errSync.Error},
+		}
+	}
+
+	return m
 }
 
 func (po PublicOperation) MarshalJSON() ([]byte, error) {

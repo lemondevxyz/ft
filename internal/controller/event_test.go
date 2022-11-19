@@ -114,16 +114,16 @@ func TestEventOperationError(t *testing.T) {
 	})
 
 	val := ev.Data.(struct {
-		ID    string `json:"id"`
-		Src   string `json:"src"`
-		Dst   string `json:"dst"`
-		Error string `json:"error"`
-		Index int    `json:"index"`
+		ID    string           `json:"id"`
+		Src   string           `json:"src"`
+		Dst   string           `json:"dst"`
+		Error *model.JSONError `json:"error"`
+		Index int              `json:"index"`
 	})
 	is.Equal(val.ID, "id")
 	is.Equal(val.Dst, "dst")
 	is.Equal(val.Src, "src")
-	is.Equal(val.Error, "")
+	is.Equal(val.Error, nil)
 	is.Equal(val.Index, 0)
 
 	ev = EventOperationError("id", "dst", model.OperationError{
@@ -131,12 +131,12 @@ func TestEventOperationError(t *testing.T) {
 		Error: fmt.Errorf("error"),
 	})
 	val = ev.Data.(struct {
-		ID    string `json:"id"`
-		Src   string `json:"src"`
-		Dst   string `json:"dst"`
-		Error string `json:"error"`
-		Index int    `json:"index"`
+		ID    string           `json:"id"`
+		Src   string           `json:"src"`
+		Dst   string           `json:"dst"`
+		Error *model.JSONError `json:"error"`
+		Index int              `json:"index"`
 	})
 
-	is.Equal(val.Error, "error")
+	is.Equal(val.Error.Err.Error(), "error")
 }

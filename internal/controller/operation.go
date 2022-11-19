@@ -474,6 +474,7 @@ func (oc *OperationController) SetRateLimit(rd io.Reader, ctrl model.Controller)
 
 	op.SetRateLimit(strct.Speed)
 
+	go oc.channel.Announce(EventOperationUpdate(op))
 	ctrl.Value(OperationGenericData{ID: strct.ID})
 
 	return nil
@@ -569,6 +570,8 @@ func (oc *OperationController) Proceed(rd io.Reader, ctrl model.Controller) erro
 	}
 
 	op.Resume()
+	go oc.channel.Announce(EventOperationUpdate(op))
+
 	ctrl.Value(strct)
 
 	return nil
@@ -610,6 +613,7 @@ func (oc *OperationController) SetIndex(rd io.Reader, ctrl model.Controller) err
 	}
 
 	op.SetIndex(strct.Index)
+	go oc.channel.Announce(EventOperationUpdate(op))
 	ctrl.Value(strct)
 
 	return nil
