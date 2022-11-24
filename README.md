@@ -33,7 +33,13 @@ ft "$DIR"
 
 By default, `ft` is exposed to every ip address and at port `8080`. However, this behaivor is customizable through setting the variable `FT_ADDR`.
 
-The `FT_ADDR` environment variable uses Go's internal `net` package and so must adhere to its syntax, for more information on the address syntax [check out this page](https://godocs.io/net#Listen).
+The `FT_ADDR` can be made to listen to either TCP or Unix sockets. Checkout the following example:
+```
+# listens on unix socket /tmp/ok.sock
+FT_ADDR="unix!/tmp/ok.sock"
+# listens on tcp socket 127.0.0.1:12345
+FT_ADDR="tcp!127.0.0.1:12345"
+```
 
 ## api
 The API is simple; there are two "sections" of the API. The operation section of the API, mounted at "/api/v0/op". And the file system section of the API, mounted at "/api/v0/fs".

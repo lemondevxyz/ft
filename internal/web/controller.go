@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -232,12 +233,27 @@ func (s *server) Start() error {
 	}
 
 	s.r = &http.Server{
-		Addr:    s.addr,
 		Handler: router,
 	}
 
+	// tcp = 0
+	// unix = 1
+	var mode = "tcp"
+	var addr = s.addr
+	if strings.HasPrefix(s.addr, "unix!") {
+		mode = "unix"
+		addr = s.addr[5:]
+	} else if strings.HasPrefix(s.addr, "tcp!") {
+		addr = s.addr[4:]
+	}
+
+	ln, err := net.Listen(mode, addr)
+	if err != nil {
+		return err
+	}
+
 	go func() {
-		s.r.ListenAndServe()
+		s.r.Serve(ln)
 	}()
 
 	return nil
