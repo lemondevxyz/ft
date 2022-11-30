@@ -52,6 +52,7 @@ func (f *FsController) RemoveAll(rd io.Reader, ctrl model.Controller) error {
 		return err
 	}
 
+	r.Name = path.Clean(r.Name)
 	err := f.fs.RemoveAll(r.Name)
 	if err != nil {
 		ctrl.Error(model.ControllerError{
@@ -82,6 +83,8 @@ func (f *FsController) MkdirAll(rd io.Reader, ctrl model.Controller) error {
 	if err := DecodeOrFail(rd, ctrl, r); err != nil {
 		return err
 	}
+
+	r.Name = path.Clean(r.Name)
 
 	err := f.fs.MkdirAll(r.Name, 0755)
 	if err != nil {
@@ -118,6 +121,8 @@ func (f *FsController) Move(rd io.Reader, ctrl model.Controller) error {
 		return err
 	}
 
+	r.Src, r.Dst = path.Clean(r.Src), path.Clean(r.Dst)
+
 	err := f.fs.Rename(r.Src, r.Dst)
 	if err != nil {
 		ctrl.Error(model.ControllerError{
@@ -150,6 +155,8 @@ func (f *FsController) ReadDir(rd io.Reader, ctrl model.Controller) (*ReadDirVal
 	if err := DecodeOrFail(rd, ctrl, r); err != nil {
 		return nil, err
 	}
+
+	r.Name = path.Clean(r.Name)
 
 	fis, err := afero.ReadDir(f.fs, r.Name)
 	if err != nil {
@@ -213,6 +220,7 @@ func (f *FsController) Size(rd io.Reader, ctrl model.Controller) (int64, error) 
 		return -1, err
 	}
 
+	val.Name = path.Clean(val.Name)
 	size, err := calculateSize(f.fs, val.Name)
 	if err != nil {
 		ctrl.Error(model.ControllerError{
@@ -255,6 +263,8 @@ func (f *FsController) Verify(rd io.Reader, ctrl model.Controller) (err error) {
 	if err := DecodeOrFail(rd, ctrl, val); err != nil {
 		panic(err)
 	}
+
+	val.Src, val.Dst = path.Clean(val.Src), path.Clean(val.Dst)
 
 	stage = "fs-src-size"
 	srcSize, err := fileSize(f.fs, val.Src)

@@ -256,6 +256,8 @@ type OperationNewValue OperationGenericValue
 func (oc *OperationController) ConvertPathsToFilesOrFail(ctrl model.Controller, srcs []string) (model.Collection, error) {
 	collect := model.Collection{}
 	for _, src := range srcs {
+		src = path.Clean(src)
+
 		fi, err := StatOrFail(ctrl, oc.fs, src)
 		if err != nil {
 			return nil, err
@@ -317,6 +319,8 @@ func (oc *OperationController) NewOperation(rd io.Reader, ctrl model.Controller)
 	if err := DecodeOrFail(rd, ctrl, strct); err != nil {
 		return nil, err
 	}
+
+	strct.Dst = path.Clean(strct.Dst)
 
 	collection, err := oc.ConvertPathsToFilesOrFail(ctrl, strct.Src)
 	if err != nil {
