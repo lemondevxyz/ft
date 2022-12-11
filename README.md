@@ -16,7 +16,7 @@ ft is a file browser that allows for file operations remotely. ft has a server/c
 ## non-features
 - [ ] Authentication; should be done by an outside application
 - [ ] Mounting or unmounting filesystems; if wanted, should be done by an outside application
-- [ ] Any execution mechanism for files
+- [ ] Any execution mechanism for file
 - [ ] File Transfer History; if wanted, should be implemented by the client but not the server
 - [ ] Exposing the file system to other protocols; use sshd, 9p or webdav-daemon
 

@@ -73,11 +73,10 @@ func (s *server) Start() error {
 		router.Use(corsHandler)
 	}
 
-	router.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/client")
+	router.GET("/client/*filepath", func(c *gin.Context) {
+		c.File("./client/index.html")
 	})
-
-	router.Static("/client", "./client")
+	router.Static("/static", "./static/")
 	router.StaticFS("/files", afero.NewHttpFs(s.fs))
 	router.GET("/api/v0/sse", func(c *gin.Context) {
 		c.Header("Content-Type", "text/event-stream")
