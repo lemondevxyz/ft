@@ -73,6 +73,9 @@ func (s *server) Start() error {
 		router.Use(corsHandler)
 	}
 
+	router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusTemporaryRedirect, "/client")
+	})
 	router.GET("/client/*filepath", func(c *gin.Context) {
 		c.File("./client/index.html")
 	})
